@@ -1,0 +1,1502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>{{APP_NAME}}</title>
+
+<!-- Build number. Shown in the panel before you enter VR, so you can tell at a
+     glance whether the headset is running your newest version. The publish
+     step increments this automatically whenever the file has changed. -->
+<script>window.BUILD = 1;</script>
+
+<!-- Controls shown on the panel, in two lists. When you add an interaction to
+     the scene (grab, throw, press), add a line to `headset` so players know. -->
+<script>
+window.KIT_CONTROLS = {
+  headset: [
+    'Press the VR button to enter',
+{{HEADSET_CONTROLS}}
+    'Right thumbstick left / right: turn 45°',
+    'Something wrong? Squeeze both triggers and hold for two seconds — a ring fills, then the moment is marked for Claude'
+  ],
+  desktop: [
+    'Right-click and drag to look around',
+    'Left-click: press what the centre ring points at (the trigger)',
+    'W, A, S, D: move',
+    'Q / E: turn',
+    'Something wrong? Press F — it marks the moment for Claude'
+  ]
+};
+</script>
+
+<!-- Self-checks. Each one is a tiny test of something this app promises to do,
+     named in plain words. They run only when asked — the preview step runs
+     them before anything is published — never while someone is playing.
+     When you add a feature, add a check for it. `t` offers:
+       t.find(sel)   t.count(sel)   t.pos(sel)                 look at the scene
+       t.click(sel)  t.press('right'|'left', 'trigger'|'grip') pretend to press
+       t.key('w', ms)   t.wait(ms)                             pretend to move, pause
+       t.expect(condition, 'what should have been true')       fail with a reason
+     A check passes if it finishes without throwing; return a Promise when it
+     needs to wait. Keep each under a couple of seconds. -->
+<script>
+window.KIT_CHECKS = [
+  // { name: 'a ball appears when you press the trigger', run: function (t) {
+  //     var before = t.count('.ball');
+  //     t.press('right', 'trigger');
+  //     return t.wait(300).then(function () {
+  //       t.expect(t.count('.ball') === before + 1, 'no new ball was added to the scene');
+  //     });
+  // } }
+];
+</script>
+
+<!-- The diary. The app keeps its own record of errors and notable events so
+     nobody has to open a browser console or read a log: the preview step
+     collects it, and window.KIT.report() prints it. It is installed before the
+     libraries load so a library that fails to load is recorded too. -->
+<script>
+window.KIT = (function () {
+  var MAX = 120, diary = [], errorLog = [], seq = 0, t0 = Date.now(), errors = 0,
+      handlers = { error: [], checks: [], mailbox: [], flag: [], logbook: [] };
+  function now() { return Math.round((Date.now() - t0) / 100) / 10; }        // seconds, 1 dp
+  function fire(ev, a, b) { handlers[ev].forEach(function (f) { try { f(a, b); } catch (e) {} }); }
+  // Every error gets a short code the player can read back: <build>-<line>
+  // (line in the running file; the build is deterministic so Claude can look it
+  // up), or <build>-lib (inside a library), -load (a file failed to load),
+  // -msg (console.error). It appears on the panel and on the in-scene sign.
+  function codeFor(where) { return String(window.BUILD || '?') + '-' + where; }
+  function note(kind, text, where) {
+    text = String(text).slice(0, kind === 'log' ? 200 : 300);
+    var last = diary[diary.length - 1];
+    if (last && last.kind === kind && last.text === text && kind !== 'flag') {   // the same line again: count it, don't repeat it
+      last.n = (last.n || 1) + 1; last.t2 = now(); return last;
+    }
+    var entry = { i: ++seq, t: now(), kind: kind, text: text };
+    if (kind === 'error') entry.code = codeFor(where || 'msg');
+    diary.push(entry); if (diary.length > MAX) diary.shift();
+    if (kind === 'error') { errors++; errorLog.push(entry); if (errorLog.length > 10) errorLog.shift(); fire('error', entry, errors); }
+    return entry;
+  }
+  // Line anchor: build.py stamps this statement's own line number into the
+  // build; the probe measures where it actually runs. The difference is the
+  // wrapper's offset (the artifact viewer adds a skeleton, artifact.py strips
+  // boilerplate), so reported lines always refer to the build file.
+  var PROBE_EXPECT = /*BUILD_PROBE*/0, lineOffset = 0;
+  try { throw new Error('probe'); } catch (e) {
+    var pm = /:(\d+):\d+\)?\s*$/.exec((e.stack || '').split('\n')[1] || (e.stack || '').split('\n')[0] || '');
+    if (PROBE_EXPECT && pm) lineOffset = parseInt(pm[1], 10) - PROBE_EXPECT - 1;   // the probe sits one line below the stamp
+  }
+  // build.py stamps the line ranges of inlined libraries here, so an error
+  // thrown inside A-Frame (one enormous line) is coded "-lib", not a line.
+  var LIB_LINES = /*BUILD_LIB_LINES*/[];
+  function inLibrary(line) {
+    for (var i = 0; i < LIB_LINES.length; i++) if (line >= LIB_LINES[i][0] && line <= LIB_LINES[i][1]) return true;
+    return false;
+  }
+  function isThisPage(filename) {
+    if (!filename) return true;
+    var here = location.href.split(/[?#]/)[0], there = String(filename).split(/[?#]/)[0];
+    return there === here || there === '' || /^\?/.test(String(filename));           // some viewers report only the query
+  }
+  function lineOf(filename, lineno) {
+    if (!lineno) return null;
+    if (!isThisPage(filename) || inLibrary(lineno - lineOffset)) return 'lib';
+    return String(lineno - lineOffset);
+  }
+  // A flag: the player says "it went wrong HERE". Nothing threw, so this is
+  // the only way those bugs get a timestamp. Headset: both triggers held for a
+  // second (xr-kit). Desktop: the F key, or the panel button. Claude reads the
+  // events in the seconds before each flag.
+  var flags = [];
+  function flag(how) {
+    var entry = note('flag', 'the player marked a problem here (' + how + ')');
+    flags.push(entry.t); fire('flag', entry, flags.length);
+    return entry;
+  }
+  window.addEventListener('keydown', function (e) {
+    if ((e.key === 'f' || e.key === 'F') && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey
+        && !/^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) flag('F key');
+  });
+  function whereText(filename, lineno) {
+    if (!lineno) return '';
+    if (isThisPage(filename) && inLibrary(lineno - lineOffset)) return ' (inside a library)';
+    return isThisPage(filename) ? ' (line ' + (lineno - lineOffset) + ')'
+                                : ' (' + String(filename).split(/[?#]/)[0].split('/').pop() + ':' + lineno + ')';
+  }
+  window.addEventListener('error', function (e) {
+    if (e.target && e.target !== window && e.target.tagName) {               // a <script> or <img> that failed to load
+      note('error', 'failed to load ' + e.target.tagName.toLowerCase() + ' ' + (e.target.src || e.target.href || ''), 'load');
+      return;
+    }
+    note('error', (e.message || String(e.error)) + whereText(e.filename, e.lineno), lineOf(e.filename, e.lineno));
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason, msg = String((r && r.message) || r), stack = (r && r.stack) || '';
+    // Entering or leaving VR can reject for reasons outside the app — a denied
+    // or double-fired requestSession, the headset busy. That is not a code bug
+    // and there is no line to point a child at, so record it quietly (no sign,
+    // no code) rather than firing "something went wrong".
+    if (/requestSession|Failed to enter VR|Failed to exit VR|exitPresent/i.test(msg)) {
+      note('warn', 'VR mode change did not complete: ' + msg); return;
+    }
+    var m = /(\S+?):(\d+):\d+\)?\s*$/m.exec(stack.split('\n')[1] || '');
+    note('error', 'unhandled promise: ' + (stack ? stack.split('\n').slice(0, 2).join(' ') : String(r)),
+         m ? lineOf(m[1], m[2]) : null);
+  });
+  // Everything the app prints is recorded: console.error and console.warn under
+  // their own names, console.log / console.info as 'log'. (xr-kit's own lines
+  // are tagged [xr-kit] and already noted by this.log, so they are not doubled.)
+  ['error', 'warn', 'log', 'info'].forEach(function (level) {
+    var orig = console[level], kind = level === 'info' ? 'log' : level;
+    console[level] = function () {
+      var args = Array.prototype.slice.call(arguments);
+      if (!(typeof args[0] === 'string' && args[0].indexOf('[xr-kit]') === 0)) {
+        note(kind, args.map(function (a) {
+          try { return typeof a === 'string' ? a : (a && a.stack) || JSON.stringify(a); } catch (e) { return String(a); }
+        }).join(' '));
+      }
+      try { orig.apply(console, args); } catch (e) {}
+    };
+  });
+
+  function scene() { return document.querySelector('a-scene'); }
+  // Which headset this app is designed for: 6 (full tracking) or 3 (turning
+  // only — on a 6DoF headset xr-kit locks the head in place to simulate it).
+  // Read from the <a-scene xr-kit="dof: N"> attribute, which is the raw string
+  // before the component initialises and its parsed data afterwards.
+  function targetDof() {
+    var s = scene(), v = s && s.getAttribute('xr-kit');
+    if (v && typeof v === 'object') return v.dof === 3 ? 3 : 6;
+    var m = /dof\s*:\s*(\d)/.exec(String(v || ''));
+    return m && m[1] === '3' ? 3 : 6;
+  }
+  function report() {
+    var s = scene(), r = s && s.renderer, kit = s && s.components && s.components['xr-kit'];
+    var framed = false; try { framed = window.top !== window.self; } catch (e) { framed = true; }
+    return {
+      build: window.BUILD, secondsRunning: now(), url: location.href.split('?')[0],
+      ua: navigator.userAgent, framed: framed, secure: !!window.isSecureContext, webxr: 'xr' in navigator,
+      sceneLoaded: !!(s && s.hasLoaded), presenting: !!(r && r.xr && r.xr.isPresenting),
+      entities: s ? s.querySelectorAll('a-entity, a-box, a-sphere, a-plane, a-cylinder, a-sky, a-text, a-image, a-gltf-model').length : 0,
+      dof: targetDof(),
+      lock: (kit && kit.lock && kit.lock.on) ? { moved: kit.lock.moved, held: kit.lock.held, frames: kit.lock.frames } : null,
+      controllers: kit ? kit.diag.controllers.slice() : [],
+      presses: kit ? kit.diag.presses : 0, turns: kit ? kit.diag.turns : 0,
+      fps: (API && API.fps) || null, errors: errors, flags: flags.slice(),
+      errorList: errorLog.slice(),
+      diary: diary.slice(-40)
+    };
+  }
+
+  // ---- mailbox --------------------------------------------------------------
+  // When this page is open as a Claude Artifact, the viewer offers the page a
+  // small database (claude.use('db')). The diary posts itself there, so the
+  // app's creator can ask Claude "did anyone have problems?" and get every
+  // tester's session without the tester doing anything. Anywhere else — the
+  // headset, a local file, the ClassCloud link — there is no runtime and this
+  // does nothing. One document per session at reports/<session id>, rewritten
+  // whole each time (latest state wins). Reports carry no personal data by
+  // construction: no names, no typed text, no addresses beyond this page's.
+  var mailbox = { on: false, sent: 0, db: null, pending: null, lastAt: 0, timer: null, everPresented: false,
+                  id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7) };
+  function browserName() {
+    var ua = navigator.userAgent, m;
+    if (/Wolvic/i.test(ua)) return 'Wolvic';
+    if (/Android/i.test(ua) && 'xr' in navigator) return 'headset browser (Android WebXR)';
+    if (/OculusBrowser/i.test(ua)) return 'Meta Quest Browser';
+    if ((m = /(Edg|Chrome|Firefox|Safari)\/(\d+)/.exec(ua))) return (m[1] === 'Edg' ? 'Edge' : m[1]) + ' ' + m[2];
+    return 'unknown';
+  }
+  function platformName() {
+    var ua = navigator.userAgent;
+    return /Android/i.test(ua) ? 'Android' : /iPhone|iPad/i.test(ua) ? 'iOS' : /Windows/i.test(ua) ? 'Windows'
+         : /Mac/i.test(ua) ? 'macOS' : /Linux/i.test(ua) ? 'Linux' : 'unknown';
+  }
+  function envelope(reason) {
+    var r = report();
+    if (r.presenting) mailbox.everPresented = true;
+    return {
+      session: mailbox.id, app: document.title, build: r.build, reason: reason,
+      started: new Date(t0).toISOString(), updated: new Date().toISOString(),
+      status: r.errors ? 'errors' : r.flags.length ? 'flagged' : (r.sceneLoaded ? 'ok' : 'loading'),
+      secondsRunning: r.secondsRunning, browser: browserName(), platform: platformName(),
+      framed: r.framed, webxr: r.webxr, enteredVR: mailbox.everPresented,
+      dof: r.dof, lock: r.lock,
+      sceneLoaded: r.sceneLoaded, entities: r.entities,
+      controllers: r.controllers, presses: r.presses, turns: r.turns, fps: r.fps,
+      errors: r.errors, firstCode: (r.errorList[0] && r.errorList[0].code) || null, flags: r.flags,
+      errorList: r.errorList, events: r.diary
+    };
+  }
+  function post(reason, force) {
+    if (!mailbox.db) { mailbox.pending = reason; return; }               // runtime not ready yet: keep the latest reason
+    var wait = 10000 - (Date.now() - mailbox.lastAt);
+    if (!force && wait > 0) {                                             // at most one write per 10 s
+      if (!mailbox.timer) mailbox.timer = setTimeout(function () { mailbox.timer = null; post(reason, true); }, wait);
+      return;
+    }
+    mailbox.lastAt = Date.now();
+    var body; try { body = envelope(reason); } catch (e) { return; }
+    try {
+      mailbox.db.doc('reports/' + mailbox.id).set(body).then(function () {
+        mailbox.sent++; fire('mailbox', 'sent', mailbox.sent);
+      }, function () { /* quota, revoked, offline — the report stays in the page */ });
+    } catch (e) {}
+  }
+  (function connect() {
+    var tries = 0;
+    function attempt() {
+      var c = window.claude;
+      if (c && typeof c.use === 'function') {
+        try {
+          c.use('db').then(function (db) {
+            if (!db) return;                                              // not an artifact view, or not granted
+            mailbox.db = db; mailbox.on = true; fire('mailbox', 'on');
+            if (mailbox.pending) { var why = mailbox.pending; mailbox.pending = null; post(why, true); }
+          }, function () {});
+        } catch (e) {}
+        return;
+      }
+      if (++tries < 20) setTimeout(attempt, 250);                         // the runtime may attach shortly after load
+    }
+    attempt();
+  })();
+  handlers.error.push(function (entry, count) { post('error', count === 1); });  // first error goes immediately
+  handlers.flag.push(function () { post('flag', true); });                          // a flag always goes immediately
+  document.addEventListener('visibilitychange', function () { if (document.hidden) post('leave', true); });
+  window.addEventListener('pagehide', function () { post('leave', true); });
+  window.addEventListener('load', function () { setTimeout(function () { post('start', true); }, 4000); });
+  setInterval(function () { post('heartbeat', true); }, 60000);
+
+  // ---- logbook ------------------------------------------------------------------
+  // The headset route. On a ClassVR headset there is no artifact runtime, but
+  // Wolvic writes every main-frame navigation start to the Android log
+  //   D VRB[Session]: onLoadRequest: <url>
+  // and ClassCloud can collect that log from the headset on request. Same-
+  // document navigations count, so the diary rewrites this page's own #fragment
+  // with history.replaceState — no reload, no history entry, a running XR
+  // session is untouched — and every entry lands in the device log, where the
+  // /check-headset step reads it back. Verified 2026-09-07 on a ClassVR
+  // headset: a 3.6 KB line arrives intact, so each beacon is chunked at 3000
+  // characters. Each beacon carries only the diary entries added since the
+  // last one; the reader stitches a session back together by id and number.
+  // Runs everywhere the mailbox doesn't (the ClassCloud copy, a local file, a
+  // plain browser tab); off a headset it only changes the address bar.
+  //   #kit=<session>-<beacon no>-<part>-<parts>.<base64url JSON>
+  var logbook = { on: false, sent: 0, seq: 0, upTo: 0, lastAt: 0, timer: null, everPresented: false, id: mailbox.id };
+  (function () { var framed = false; try { framed = window.top !== window.self; } catch (e) { framed = true; } logbook.on = !framed; })();
+  function b64url(str) {
+    try { return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+    catch (e) { return ''; }
+  }
+  function compactEntry(d) {
+    var e = [d.i, d.t, d.kind, d.text];
+    if (d.code) e.push(d.code);
+    if (d.n) e.push('x' + d.n);
+    return e;
+  }
+  function logbookEnvelope(reason) {
+    var r = report();
+    if (r.presenting) logbook.everPresented = true;
+    var fresh = diary.filter(function (d) { return d.i > logbook.upTo; }), dropped = 0;
+    if (fresh.length > 40) { dropped = fresh.length - 40; fresh = fresh.slice(-40); }
+    if (diary.length) logbook.upTo = diary[diary.length - 1].i;
+    var body = {
+      v: 1, k: reason, b: r.build, t: r.secondsRunning,
+      st: r.errors ? 'errors' : r.flags.length ? 'flagged' : (r.sceneLoaded ? 'ok' : 'loading'),
+      vr: r.presenting, ev: logbook.everPresented, fps: r.fps, c: r.controllers, p: r.presses, tn: r.turns,
+      e: r.errors, f: r.flags.length, d: fresh.map(compactEntry)
+    };
+    if (dropped) body.dropped = dropped;
+    if (r.lock) body.lk = [r.lock.moved, r.lock.held, r.lock.frames];   // 3DoF lock: how far the player really moved, how far the view moved, frames locked
+    if (reason === 'boot' || reason === 'start') {
+      body.app = document.title; body.browser = browserName(); body.platform = platformName();
+      if (reason === 'start') body.dof = r.dof;                            // the scene exists by then (at boot it is not parsed yet)
+      body.webxr = r.webxr; body.secure = r.secure; body.ua = navigator.userAgent.slice(0, 160);
+    }
+    return body;
+  }
+  function beacon(reason, force) {
+    if (!logbook.on) return;
+    var wait = 2000 - (Date.now() - logbook.lastAt);
+    if (!force && wait > 0) {                                             // at most one beacon per 2 s unless forced
+      if (!logbook.timer) logbook.timer = setTimeout(function () { logbook.timer = null; beacon(reason, true); }, wait);
+      return;
+    }
+    logbook.lastAt = Date.now();
+    var body; try { body = JSON.stringify(logbookEnvelope(reason)); } catch (e) { return; }
+    var enc = b64url(body); if (!enc) return;
+    var n = ++logbook.seq, SIZE = 3000, parts = Math.max(1, Math.ceil(enc.length / SIZE)), base = location.href.split('#')[0];
+    for (var p = 1; p <= parts; p++) {
+      var frag = '#kit=' + logbook.id + '-' + n + '-' + p + '-' + parts + '.' + enc.slice((p - 1) * SIZE, p * SIZE);
+      try { history.replaceState(history.state, '', base + frag); } catch (e) { try { location.hash = frag.slice(1); } catch (e2) { return; } }
+    }
+    logbook.sent++; fire('logbook', reason, logbook.sent);
+  }
+  if (logbook.on) {
+    beacon('boot', true);                                                  // before the libraries load: build, browser
+    handlers.error.push(function (entry, count) { beacon('error', count === 1); });
+    handlers.flag.push(function () { beacon('flag', true); });
+    document.addEventListener('enter-vr', function () { setTimeout(function () { beacon('vr', true); }, 1500); });
+    document.addEventListener('exit-vr', function () { beacon('vr', true); });
+    document.addEventListener('visibilitychange', function () { if (document.hidden) beacon('end', true); });
+    window.addEventListener('pagehide', function () { beacon('end', true); });
+    window.addEventListener('load', function () { setTimeout(function () { beacon('start', true); }, 4000); });
+    setInterval(function () { beacon('beat', true); }, 30000);
+  }
+
+  // ---- self-checks --------------------------------------------------------
+  function helpers() {
+    function find(sel) { return document.querySelector(sel); }
+    function need(sel) { var el = find(sel); if (!el) throw new Error('nothing in the scene matches ' + sel); return el; }
+    function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+    function keyEvt(type, key) {
+      return new KeyboardEvent(type, { key: key, code: 'Key' + key.toUpperCase(), bubbles: true });
+    }
+    return {
+      find: find,
+      count: function (sel) { return document.querySelectorAll(sel).length; },
+      pos: function (sel) {
+        var el = need(sel), v = new AFRAME.THREE.Vector3();
+        el.object3D.getWorldPosition(v); return { x: v.x, y: v.y, z: v.z };
+      },
+      click: function (sel) {                                   // what the gaze cursor / laser does
+        var el = need(sel);
+        el.emit('mousedown'); el.emit('click', { cursorEl: find('#gaze') }); el.emit('mouseup');
+      },
+      press: function (hand, button) {                          // what a controller button does
+        var el = need('#' + (hand === 'left' ? 'left' : 'right') + '-hand');
+        button = button || 'trigger';
+        el.emit(button + 'down'); el.emit(button + 'changed', { pressed: true });
+        el.emit(button + 'up');   el.emit(button + 'changed', { pressed: false });
+      },
+      key: function (key, ms) {
+        window.dispatchEvent(keyEvt('keydown', key));
+        return wait(ms || 500).then(function () { window.dispatchEvent(keyEvt('keyup', key)); });
+      },
+      wait: wait,
+      expect: function (ok, why) { if (!ok) throw new Error(why || 'something that should have happened did not'); }
+    };
+  }
+  var builtIn = [
+    { name: 'the 3D library loaded', run: function (t) { t.expect(typeof AFRAME !== 'undefined', 'aframe.min.js is missing or broken'); } },
+    { name: 'the scene finished loading', run: function (t) { t.expect(scene() && scene().hasLoaded, '<a-scene> never reported loaded'); } },
+    { name: 'the ground, sky, player rig and camera are all there', run: function (t) {
+        ['#rig', '#tracking', '#head', 'a-sky', 'a-plane', '#left-hand', '#right-hand'].forEach(function (s) { t.expect(t.find(s), s + ' is missing'); });
+        var head = t.find('#head'), tracking = t.find('#tracking');
+        t.expect(head.parentElement === tracking && tracking.parentElement === t.find('#rig'), 'the rig must be #rig > #tracking > #head');
+        t.expect(t.find('#left-hand').parentElement === tracking && t.find('#right-hand').parentElement === tracking, 'both hands must sit inside #tracking'); } },
+    // 3DoF apps only: the two things the simulation promises.
+    { name: '3DoF: the view stays put when the headset moves', when: function () { return targetDof() === 3; }, run: function (t) {
+        var kit = scene().components['xr-kit'], THREE = AFRAME.THREE;
+        t.expect(kit && kit.enforceLock && kit.lock && kit.lock.on, 'xr-kit has no 3DoF lock');
+        t.expect(scene().renderer && scene().renderer.xr.__kitLock === true, 'renderer.xr.getCamera is not wrapped by the kit');
+        var rig = t.find('#rig').object3D, want = rig.getWorldPosition(new THREE.Vector3()); want.y += kit.HEAD_HEIGHT;
+        var q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.5, 0.8, 0.1));
+        function eyes(x, y, z) {                      // a pretend ArrayCamera: two eyes 64 mm apart at (x,y,z), tilted
+          var mk = function (px) { var c = new THREE.PerspectiveCamera(); c.matrixWorld.compose(new THREE.Vector3(px, y, z), q, new THREE.Vector3(1, 1, 1)); return c; };
+          var a = mk(x); return { cameras: [mk(x - 0.032), mk(x + 0.032)], matrixWorld: a.matrixWorld, matrixWorldInverse: a.matrixWorldInverse };
+        }
+        function midOf(fake) { return new THREE.Vector3().setFromMatrixPosition(fake.cameras[0].matrixWorld).add(new THREE.Vector3().setFromMatrixPosition(fake.cameras[1].matrixWorld)).multiplyScalar(0.5); }
+        var saved = { ref: kit.lock.ref, moved: kit.lock.moved, held: kit.lock.held, frames: kit.lock.frames };
+        try {
+          kit.lock.ref = null;
+          var f0 = eyes(0.3, 1.75, -0.4); kit.enforceLock(f0);          // where the head is when VR starts
+          var m0 = midOf(f0), sep = new THREE.Vector3().setFromMatrixPosition(f0.cameras[0].matrixWorld).distanceTo(new THREE.Vector3().setFromMatrixPosition(f0.cameras[1].matrixWorld));
+          t.expect(m0.distanceTo(want) < 0.001, 'at the start the eyes were not centred ' + kit.HEAD_HEIGHT + ' m above the rig (off by ' + m0.distanceTo(want).toFixed(3) + ' m)');
+          if (kit.data.stereo) t.expect(Math.abs(sep - 0.064) < 0.001, 'the eyes are ' + sep.toFixed(3) + ' m apart, expected 0.064');
+          else t.expect(sep < 0.001, 'mono: the eyes should coincide, they are ' + sep.toFixed(3) + ' m apart');
+          t.expect(new THREE.Quaternion().setFromRotationMatrix(f0.cameras[0].matrixWorld).angleTo(q) < 0.001, 'the lock changed the eye rotation');
+          var inv = f0.cameras[0].matrixWorld.clone().invert();
+          t.expect(inv.elements.every(function (v, i) { return Math.abs(v - f0.cameras[0].matrixWorldInverse.elements[i]) < 1e-6; }), 'matrixWorldInverse was not refreshed');
+          var f1 = eyes(0.3, 1.75, -1.4); kit.enforceLock(f1);          // the player walks 1 m forward
+          var moved = midOf(f1).sub(want), g = kit.data.give;
+          t.expect(Math.abs(moved.length() - g) < 0.001 && (g === 0 || moved.z < 0), 'walking 1 m forward moved the view ' + moved.length().toFixed(3) + ' m (expected give × 1 m = ' + g + ', forward)');
+          var f2 = eyes(0.3, 1.75, -20.4); kit.enforceLock(f2);         // a 20 m wander is capped
+          var cap = Math.max(0.4, g * 4), far = midOf(f2).distanceTo(want);
+          t.expect(Math.abs(far - cap) < 0.001, 'a 20 m walk moved the view ' + far.toFixed(3) + ' m (expected the cap, ' + cap + ')');
+        } finally { kit.lock.ref = saved.ref; kit.lock.moved = saved.moved; kit.lock.held = saved.held; kit.lock.frames = saved.frames; }
+      } },
+    { name: '3DoF: the trigger selects what you are looking at', when: function () { return targetDof() === 3; }, run: function (t) {
+        var kit = scene().components['xr-kit'], THREE = AFRAME.THREE, cam = kit.headObject();
+        var pos = cam.getWorldPosition(new THREE.Vector3()), dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.getWorldQuaternion(new THREE.Quaternion()));
+        pos.addScaledVector(dir, 2);
+        var box = document.createElement('a-box'); box.classList.add('clickable'); box.id = 'kit-check-target';
+        box.setAttribute('position', pos.x + ' ' + pos.y + ' ' + pos.z); box.setAttribute('depth', '0.5'); box.setAttribute('width', '0.5'); box.setAttribute('height', '0.5');
+        var clicked = false; box.addEventListener('click', function () { clicked = true; });
+        scene().appendChild(box);
+        return t.wait(400).then(function () { t.press('right', 'trigger'); return t.wait(150); }).then(function () {
+          box.parentNode && box.parentNode.removeChild(box);
+          t.expect(clicked, 'a trigger press did not select the object in front of the player');
+        });
+      } },
+    { name: 'the player can walk forward', run: function (t) {
+        var before = t.pos('#head');                       // wasd-controls moves the head, not the rig
+        return t.key('w', 800).then(function () {
+          var after = t.pos('#head'), moved = Math.hypot(after.x - before.x, after.z - before.z);
+          t.expect(moved > 0.05, 'the player did not move when W was held (moved ' + moved.toFixed(3) + 'm)');
+        }); } },
+    { name: 'the "something wrong" marker works (F key)', run: function (t) {
+        var before = flags.length;
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true }));
+        t.expect(flags.length === before + 1, 'pressing F did not record a flag');
+        flags.pop(); diary.pop();                                          // leave no trace of the test flag
+      } },
+    { name: 'nothing went wrong while loading', run: function (t) {
+        var list = report().errorList;
+        t.expect(!list.length, list.length + ' error(s): ' + list.map(function (d) { return d.text; }).join(' | ').slice(0, 400)); } }
+  ];
+  function runOne(check, t) {
+    var started = Date.now();
+    return new Promise(function (resolve) {
+      var done = false, timer = setTimeout(function () { finish(false, 'took longer than 5 seconds'); }, 5000);
+      function finish(ok, detail) {
+        if (done) return; done = true; clearTimeout(timer);
+        var r = { name: check.name, ok: ok, detail: detail || '', ms: Date.now() - started };
+        try { console.log('[xr-kit] check', ok ? 'PASS' : 'FAIL', '—', r.name, detail ? '— ' + detail : ''); } catch (e) {}
+        note('check', (ok ? 'PASS ' : 'FAIL ') + r.name + (detail ? ' — ' + detail : ''));
+        resolve(r);
+      }
+      try { Promise.resolve(check.run(t)).then(function () { finish(true); }, function (e) { finish(false, e && e.message || String(e)); }); }
+      catch (e) { finish(false, e && e.message || String(e)); }
+    });
+  }
+  function runChecks() {
+    var t = helpers(), list = builtIn.concat(Array.isArray(window.KIT_CHECKS) ? window.KIT_CHECKS : []);
+    list = list.filter(function (c) { try { return !c.when || c.when(); } catch (e) { return true; } });   // `when`: a check that only applies sometimes (e.g. 3DoF apps)
+    var results = [];
+    return list.reduce(function (p, c) {
+      return p.then(function () { return runOne(c, t).then(function (r) { results.push(r); }); });
+    }, Promise.resolve()).then(function () {
+      API.checkResults = results; fire('checks', results); return results;
+    });
+  }
+
+  // Standalone-headset detection that does not trust the user-agent string:
+  // the ClassVR Wolvic overrides its UA, so "Wolvic" is usually absent. A
+  // headset browser is Android + WebXR + immersive-vr actually supported (or a
+  // session running). The panel and the xr-kit report immersive support here.
+  var immersive = null;                                         // null = not known yet
+  function headsetBrowser() {
+    var ua = navigator.userAgent;
+    if (/Wolvic|OculusBrowser|Pico/i.test(ua)) return true;
+    var s = scene(), r = s && s.renderer;
+    if (r && r.xr && r.xr.isPresenting) return true;
+    return /Android/i.test(ua) && 'xr' in navigator && immersive === true;
+  }
+  var API = {
+    note: note, report: report, runChecks: runChecks, checkResults: null, fps: null,
+    setImmersive: function (ok) { immersive = !!ok; },
+    headsetBrowser: headsetBrowser,
+    mailbox: function () { return { on: mailbox.on, sent: mailbox.sent, session: mailbox.id }; },
+    logbook: function () { return { on: logbook.on, sent: logbook.sent, session: logbook.id }; },
+    flag: flag,
+    on: function (ev, fn) { if (handlers[ev]) handlers[ev].push(fn); }
+  };
+  // Add ?kitcheck to the address to run the checks in an ordinary browser and
+  // see the results on the panel — a way to try them by hand.
+  if (/[?&]kitcheck/.test(location.search)) {
+    window.addEventListener('load', function () { setTimeout(runChecks, 2500); });
+  }
+  return API;
+})();
+</script>
+
+<!-- Libraries are bundled beside this file, never loaded from a CDN. -->
+<script src="./aframe.min.js"></script>
+<!--KIT-EXTRA-LIBS-->
+
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #cfe9f7; }
+
+  /* The panel is only visible outside VR: it disappears the moment you enter
+     an immersive session, but everything it shows is still there when you
+     come back out. */
+  #kit-panel {
+    position: fixed; top: 12px; left: 12px; z-index: 9999;
+    font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #40505f; background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(64, 80, 95, 0.18); border-radius: 10px;
+    padding: 10px 12px; max-width: 340px; pointer-events: none;
+    backdrop-filter: blur(4px);
+  }
+  #kit-panel b     { display: block; font-weight: 600; }
+  #kit-panel .build{ display: block; margin: 0 0 8px; font-size: 22px; font-weight: 700;
+                     color: #2f6f8f; font-variant-numeric: tabular-nums; }
+  #kit-panel .target { margin: -4px 0 8px; color: #6c7d8e; font-size: 12px; line-height: 1.4; }
+  #kit-panel .ok   { color: #3f8f66; }
+  #kit-panel .bad  { color: #c0574f; }
+  #kit-panel .warn { color: #a9782a; }
+  #kit-panel .sub  { margin-top: 8px; padding-top: 8px; color: #6c7d8e;
+                     border-top: 1px solid rgba(64,80,95,0.16); }
+  #kit-panel .sub h4 { margin: 6px 0 2px; font-size: 12px; font-weight: 600;
+                       color: #40505f; letter-spacing: .02em; }
+  #kit-panel .sub h4:first-child { margin-top: 0; }
+  #kit-panel .sub ul { margin: 0 0 4px; padding-left: 16px; }
+  /* Small windows (the artifact side tab): keep the panel out of the middle of
+     the view — tighter type, narrower, and it lets the scene through more. */
+  @media (max-width: 700px), (max-height: 520px) {
+    #kit-panel { font-size: 11px; line-height: 1.4; padding: 7px 9px; max-width: 250px;
+                 background: rgba(255, 255, 255, 0.72); }
+    #kit-panel .build { font-size: 17px; margin-bottom: 5px; }
+    #kit-panel .sub   { margin-top: 5px; padding-top: 5px; }
+    #kit-panel .sub h4 { font-size: 11px; margin: 4px 0 1px; }
+  }
+  #kit-panel .sub li { margin: 1px 0; }
+
+
+  /* Desktop reticle: a small ring at the screen centre showing where the gaze
+     ray (and so a left-click) is pointing. Hidden while immersed — the headset
+     has its own controller lasers. */
+  #kit-reticle {
+    position: fixed; left: 50%; top: 50%; width: 10px; height: 10px;
+    margin: -7px 0 0 -7px; border: 2px solid rgba(255, 255, 255, 0.92);
+    border-radius: 50%; box-sizing: content-box; pointer-events: none; z-index: 10001;   /* above the panel */
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(0, 0, 0, 0.45);
+  }
+</style>
+
+<script>
+/* ==========================================================================
+   xr-kit — the invisible plumbing every ClassVR prototype needs.
+
+   Attach to <a-scene>. Provides:
+     - smooth movement on the left thumbstick, relative to where you look
+     - snap turn on the right thumbstick, pivoting on the player's head
+     - the Wolvic colour fix (linear output while immersed, sRGB otherwise)
+     - developer diagnostics written to the console, tagged [xr-kit], and
+       into the diary (window.KIT.report()) that the preview step collects
+   Nothing here is content. Add your own objects to the <a-scene> below, or
+   register your own components; leave this one alone.
+   ========================================================================== */
+// Desktop mouse: RIGHT button drags the view, LEFT button is the trigger.
+// A-Frame's look-controls only listens to the left button, so its mouse-down
+// handler is re-pointed at the right button here (drag maths unchanged), and
+// the browser's right-click menu is suppressed over the scene. The gaze cursor
+// (#gaze under #head, casting from the screen centre) is limited to the left
+// button so a right-drag never counts as a click on whatever it ends over.
+(function () {
+  var LC = AFRAME.components['look-controls'].Component.prototype;
+  var lookDown = LC.onMouseDown;
+  LC.onMouseDown = function (e) {
+    if (e.button !== 2) return;
+    lookDown.call(this, { button: 0, screenX: e.screenX, screenY: e.screenY });
+  };
+  var CU = AFRAME.components['cursor'].Component.prototype;
+  var curDown = CU.onCursorDown, curUp = CU.onCursorUp;
+  CU.onCursorDown = function (e) {
+    if (e.type === 'mousedown' && e.button !== 0) return;
+    curDown.call(this, e);
+  };
+  CU.onCursorUp = function (e) {
+    if (e.type === 'mouseup' && e.button !== 0) return;
+    curUp.call(this, e);
+  };
+  window.addEventListener('contextmenu', function (e) {
+    if (e.target && e.target.tagName === 'CANVAS') e.preventDefault();
+  });
+})();
+
+// Checked ground: two greens drawn on a 2D canvas and tiled, so looking and
+// moving are visible against the floor. No image file, no network request —
+// the same canvas-texture route the kit uses for text.
+AFRAME.registerComponent('checker-ground', {
+  schema: {
+    colorA: { default: '#a4d29a' },
+    colorB: { default: '#8bbf82' },
+    cell:   { default: 1 }            // metres per square
+  },
+  init: function () {
+    var d = this.data, el = this.el;
+    var c = document.createElement('canvas'); c.width = c.height = 64;
+    var g = c.getContext('2d');
+    g.fillStyle = d.colorA; g.fillRect(0, 0, 64, 64);
+    g.fillStyle = d.colorB; g.fillRect(0, 0, 32, 32); g.fillRect(32, 32, 32, 32);
+    var tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.magFilter = THREE.NearestFilter;                 // crisp edges, no blur between squares
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    function apply() {
+      var mesh = el.getObject3D('mesh'); if (!mesh || !mesh.material) return;
+      var w = parseFloat(el.getAttribute('width')) || 1, h = parseFloat(el.getAttribute('height')) || 1;
+      tex.repeat.set(w / (2 * d.cell), h / (2 * d.cell));   // one canvas = 2x2 squares
+      tex.needsUpdate = true;
+      mesh.material.map = tex; mesh.material.color.set('#ffffff'); mesh.material.needsUpdate = true;
+    }
+    apply();
+    el.addEventListener('object3dset', apply);
+    el.addEventListener('materialtextureloaded', apply);
+  }
+});
+
+AFRAME.registerComponent('xr-kit', {
+  // dof: which headset the app is designed for. 6 = full tracking (default).
+  // 3 = turning only: the head is locked 1.6 m above the rig, hands and lasers
+  // are hidden, the trigger selects whatever the player is LOOKING at, the
+  // right stick still snap-turns. Change it here to retarget an app.
+  // 3DoF only: `stereo` keeps the real eye separation (false = both eyes on one
+  // point, mono); `give` is the fraction of real head movement let through (0 =
+  // eyes nailed to a point, 1 = real walking). 0.3 was tuned on a ClassVR
+  // headset on 9 Sep 2026 — it is where the "sliding backwards while I walk"
+  // feeling stops while the player still stays put.
+  schema: { dof: { default: 6 }, stereo: { default: true }, give: { default: 0.3 } },
+
+  init: function () {
+    var THREE = AFRAME.THREE;
+    var self = this;
+    this.rigEl  = document.querySelector('#rig');
+    this.headEl = document.querySelector('#head');
+    this.trackEl = document.querySelector('#tracking');
+    this.diag = { controllers: [], presses: 0, xrPresses: 0, turns: 0 };
+    this.is3dof = function () { return self.data.dof === 3; };
+
+    // Developer-facing diagnostics go to the console and the diary, never the
+    // panel. The preview step collects the diary on desktop; on a headset it
+    // reaches Claude through the logbook (see window.KIT) and /check-headset.
+    this.log = function () {
+      var args = ['[xr-kit]'].concat(Array.prototype.slice.call(arguments));
+      try { console.log.apply(console, args); } catch (e) {}
+      try { window.KIT.note('log', args.slice(1).join(' ')); } catch (e) {}
+    };
+    this.frames = 0; this.fpsAt = 0;
+    this.installErrorSign();
+    this.installFlagCards();
+    this.log('build', window.BUILD, '| A-Frame', AFRAME.version,
+             '| secure', !!window.isSecureContext, '| webxr', 'xr' in navigator,
+             '| ua', navigator.userAgent);
+    if ('xr' in navigator && navigator.xr.isSessionSupported) {
+      navigator.xr.isSessionSupported('immersive-vr').then(function (ok) {
+        self.log('immersive-vr supported:', ok);
+        try { window.KIT.setImmersive(ok); } catch (e) {}
+      }).catch(function (e) { self.log('immersive-vr check failed:', String(e)); });
+    }
+
+    // ---- snap turn -------------------------------------------------------
+    this.SNAP_DEG = 45;
+    this.snapArmed = true;
+    this.SNAP_ON = 0.65;  this.SNAP_OFF = 0.35;
+
+    var right = document.querySelector('#right-hand');
+    if (right) right.addEventListener('thumbstickmoved', function (e) {
+      self.thumb(e.detail && e.detail.x);
+    });
+
+    // ---- movement ---------------------------------------------------------
+    this.MOVE_SPEED = 1.5;        // metres per second at full deflection
+    this.MOVE_DEAD  = 0.15;       // ignore stick noise below this
+    this.move = { x: 0, y: 0 };   // latest left-stick reading
+    var left = document.querySelector('#left-hand');
+    if (left) left.addEventListener('thumbstickmoved', function (e) {
+      if (e.detail) { self.move.x = e.detail.x || 0; self.move.y = e.detail.y || 0; }
+    });
+    window.addEventListener('keydown', function (e) {
+      if (e.key === 'q' || e.key === 'Q') self.snapTurn(-1);
+      if (e.key === 'e' || e.key === 'E') self.snapTurn(1);
+    });
+
+    // ---- 3DoF simulation ---------------------------------------------------
+    // A 3DoF headset tracks turning only. A 6DoF headset reports position too,
+    // and three.js writes the whole pose onto the camera every frame; it cannot
+    // be switched off, so the kit overrides it at the last possible moment:
+    // renderer.xr.getCamera() is wrapped, and each time three.js asks for the XR
+    // camera to draw a frame, every eye camera's world matrix (and the array
+    // camera's) is recomposed at a fixed point HEAD_HEIGHT above the rig, with
+    // its rotation kept, and its inverse refreshed. Nothing else moves.
+    // HISTORY (9 Sep 2026, Gaze Test on a ClassVR headset): moving a parent
+    // entity by the opposite of the pose in tick was measured exact (0.000 m)
+    // and yet felt like the view orbiting when the player nodded; so did a neck
+    // model. This override — from an earlier Avantis project — felt right at
+    // once. In stereo a slow "sliding backwards while I walk" remained, so a
+    // fraction of the real movement is let through (`give`, tuned to 0.3): the
+    // player still stays put, but the body/eye conflict is below notice. A cap
+    // of max(0.4 m, 4 × give) stops a long wander turning into real walking.
+    this.HEAD_HEIGHT = 1.6;
+    this.lock = { on: this.is3dof(), moved: 0, held: 0, frames: 0, ref: null };
+    this._lo = new THREE.Vector3(); this._lm = new THREE.Vector3(); this._le = new THREE.Vector3();
+    this._lp = new THREE.Vector3(); this._lq = new THREE.Quaternion(); this._ls = new THREE.Vector3();
+    this._lt = new THREE.Vector3(); this._lg = new THREE.Vector3();
+    if (this.lock.on) this.installLock();
+    this.el.addEventListener('enter-vr', function () { self.lock.ref = null; });   // re-anchor where the head is when VR starts
+    this.el.addEventListener('exit-vr', function () {
+      if (!self.lock.on) return;
+      if (self.lock.frames) self.log('3dof lock — player moved up to', self.lock.moved.toFixed(2), 'm; view gave', self.lock.held.toFixed(3), 'm (give', self.data.give + ') over', self.lock.frames, 'frames');
+      self.lock.ref = null;
+    });
+    // The desktop gaze cursor in VR. A-Frame quietly wires every WebXR select
+    // (any trigger) to it as well as to the lasers, and its entity is frozen
+    // under #head there — so a trigger could also "click" whatever the player
+    // faced when they entered VR. The kit owns that path: those listeners are
+    // removed on entry; a 6DoF app ignores the gaze in VR, a 3DoF app drives it.
+    var gaze = document.querySelector('#gaze');
+    this.el.addEventListener('enter-vr', function () {
+      setTimeout(function () {
+        var r = self.el.renderer; if (!(r && r.xr && r.xr.isPresenting)) return;   // desktop fullscreen is "vr-mode" too: leave the mouse alone
+        var c = gaze && gaze.components && gaze.components.cursor;
+        if (c && c.removeWebXREventListeners) { try { c.removeWebXREventListeners(); } catch (e) {} }
+        if (gaze && !self.is3dof()) gaze.setAttribute('raycaster', 'enabled', false);
+      }, 0);
+    });
+    this.el.addEventListener('exit-vr', function () { if (gaze && !self.is3dof()) gaze.setAttribute('raycaster', 'enabled', true); });
+    if (this.is3dof()) {
+      this.log('target: 3DoF (head locked at', this.HEAD_HEIGHT, 'm by getCamera override,', this.data.stereo ? 'stereo' : 'mono', ', give', this.data.give, '; gaze + trigger; snap turn on; stick movement off)');
+      // Gaze selection. The #gaze cursor casts from the camera; in VR the #head
+      // entity is frozen while the camera object inside it carries the pose, so
+      // the cursor's object is re-hung on the camera itself and follows the
+      // real head everywhere. Any trigger — or the raw WebXR select, which
+      // fires even when A-Frame does not recognise the controller — presses it.
+      function hangGaze() {
+        var cam = self.headObject();
+        if (!gaze || !cam || !cam.isCamera || gaze.object3D.parent === cam) return;
+        cam.add(gaze.object3D);
+      }
+      this.el.addEventListener('loaded', hangGaze);
+      this.el.addEventListener('enter-vr', function () { setTimeout(hangGaze, 0); });
+      // The cursor component is driven directly (its own listeners are for the
+      // desktop mouse): mousedown / mouseup / click on whatever it intersects.
+      var sel = { down: false, at: 0 };
+      function cursor() { return gaze && gaze.components && gaze.components.cursor; }
+      this.selectDown = function (how) {
+        if (sel.down || performance.now() - sel.at < 150) return;          // one press, however many sources report it
+        sel.down = true; sel.at = performance.now();
+        var c = cursor(); if (c) { try { c.onCursorDown({ type: 'kit-select', detail: how, preventDefault: function () {} }); } catch (e) {} }
+      };
+      this.selectUp = function () {
+        if (!sel.down) return;
+        sel.down = false; sel.at = performance.now();
+        var c = cursor(); if (c) { try { c.onCursorUp({ type: 'kit-select', preventDefault: function () {} }); } catch (e) {} }
+      };
+      ['#left-hand', '#right-hand'].forEach(function (s) {
+        var el = document.querySelector(s); if (!el) return;
+        el.addEventListener('triggerdown', function () { self.selectDown('trigger'); });
+        el.addEventListener('triggerup', self.selectUp);
+        // No lasers, no hand-aimed clicks: the eyes do the aiming.
+        el.addEventListener('controllerconnected', function () {
+          setTimeout(function () { el.setAttribute('raycaster', { enabled: false, showLine: false }); }, 0);
+        });
+      });
+      this.el.addEventListener('enter-vr', function () {
+        setTimeout(function () {
+          var s = self.el.xrSession || (self.el.renderer && self.el.renderer.xr && self.el.renderer.xr.getSession());
+          if (!s || s.__kitSelectBound) return;
+          s.__kitSelectBound = true;
+          s.addEventListener('selectstart', function () { self.selectDown('xr select'); });
+          s.addEventListener('selectend', self.selectUp);
+        }, 0);
+      });
+    }
+
+    // ---- desktop look -----------------------------------------------------
+    // Right-click-and-drag, everywhere (look-controls with pointer lock off,
+    // re-pointed at the right button above; left button = trigger). Drag
+    // keeps reporting the mouse even after it leaves the page — the browser
+    // captures the pointer for the duration of a held button — so turning
+    // never stalls at the frame edge. Pointer lock ("click once, then the
+    // mouse looks") was tried and dropped: embeds refuse it, and every
+    // fallback that mimicked it stopped at the edge or felt unnatural.
+
+    // ---- input diagnostics -----------------------------------------------
+    ['#left-hand', '#right-hand'].forEach(function (sel) {
+      var el = document.querySelector(sel);
+      if (!el) return;
+      el.addEventListener('controllerconnected', function (e) {
+        var name = (e.detail && e.detail.name) || 'unknown';
+        self.diag.controllers.push(name);
+        self.log('controller connected:', sel, name);
+      });
+      ['triggerdown', 'gripdown'].forEach(function (evt) {
+        el.addEventListener(evt, function () { self.diag.presses++; });
+      });
+    });
+    // "Something wrong" gesture: both triggers squeezed together and held for
+    // a second. Every controller has a trigger, apps rarely need both at once,
+    // and it is hard to do by accident. Fires once per hold.
+    // Two seconds in total: nothing for the first second (an accidental
+    // double squeeze is over by then), then a ring fills over the second one
+    // so the player can let go if they didn't mean it. Timing is in tick().
+    this.gesture = { left: false, right: false, since: 0, fired: false };
+    // Align each laser to the controller's natural POINTING pose (below).
+    this.rayAligned = { left: false, right: false };
+    this.el.addEventListener('enter-vr', function () { self.rayAligned = { left: false, right: false }; });
+    ['left', 'right'].forEach(function (hand) {
+      var el = document.querySelector('#' + hand + '-hand'); if (!el) return;
+      el.addEventListener('triggerdown', function () { self.gesture[hand] = true; });
+      el.addEventListener('triggerup', function () { self.gesture[hand] = false; });
+    });
+
+    // Raw WebXR select events fire regardless of whether A-Frame recognises
+    // the controller profile — a useful second opinion when a button seems dead.
+    this.el.addEventListener('enter-vr', function () {
+      setTimeout(function () {
+        var s = self.el.xrSession ||
+                (self.el.renderer && self.el.renderer.xr && self.el.renderer.xr.getSession());
+        if (!s || s.__kitBound) return;
+        s.__kitBound = true;
+        s.addEventListener('selectstart', function () { self.diag.xrPresses++; });
+        self.log('xr session started; input sources:', s.inputSources ? s.inputSources.length : 'n/a');
+      }, 0);
+    });
+    // One summary line when the player leaves VR — enough to tell "no input
+    // ever arrived" from "input arrived but nothing happened".
+    this.el.addEventListener('exit-vr', function () {
+      self.log('session summary — controllers:', self.diag.controllers.join(', ') || 'none seen',
+               '| presses:', self.diag.presses, '(webxr', self.diag.xrPresses + ')',
+               '| snap turns:', self.diag.turns);
+    });
+
+    // ---- colour output -----------------------------------------------------
+    // Wolvic's WebXR compositor applies its own sRGB encode on top of the one
+    // three.js performs, so a normal render is gamma-corrected twice while
+    // immersed and looks washed out. Emitting LINEAR while immersed cancels
+    // that exactly — confirmed on a ClassVR headset. A flat desktop browser
+    // encodes once, correctly, so it keeps standard sRGB output.
+    //
+    // TIMING MATTERS. three.js freezes the XR framebuffer's colour space at
+    // the instant the session starts (WebXRManager.setSession creates the
+    // render target with `colorSpace: renderer.outputColorSpace`), and every
+    // frame in VR reads that frozen value. A-Frame emits `enter-vr` AFTER
+    // setSession, so switching there changes a setting nothing reads. The
+    // switch therefore happens in a wrapper around enterVR(), before the
+    // session is requested — and, as a second line of defence, the frozen
+    // value on the live render target is corrected once the session exists.
+    function setOutput(linear) {
+      var r = self.el.renderer; if (!r) return;
+      r.toneMapping = THREE.NoToneMapping;
+      r.outputColorSpace = linear ? THREE.LinearSRGBColorSpace : THREE.SRGBColorSpace;
+      self.log('colour output:', linear ? 'linear (immersive)' : 'srgb (flat)');
+    }
+    // enterVR(useAR, useOfferSession): A-Frame also calls this at load with
+    // useOfferSession=true merely to advertise a session to the browser — that
+    // is not an entry, so leave the flat view alone in that case.
+    // Desktop fullscreen also goes through enterVR / enter-vr (A-Frame calls it
+    // "vr-mode" too) but is a flat display: it must stay sRGB, or the whole
+    // scene goes dark and over-saturated. Only a real headset gets linear.
+    function headsetHere() {
+      try { return !!self.el.checkHeadsetConnected(); } catch (e) { return false; }
+    }
+    var originalEnterVR = this.el.enterVR;
+    this.el.enterVR = function (useAR, useOfferSession) {
+      if (!useOfferSession && headsetHere()) setOutput(true);   // before the session exists
+      return originalEnterVR.apply(self.el, arguments);
+    };
+    this.el.addEventListener('enter-vr', function () {
+      var r = self.el.renderer;
+      if (!(r && r.xr && r.xr.isPresenting)) return;            // desktop fullscreen: leave sRGB
+      setOutput(true);
+      var rt = r && r.xr && r.xr.getRenderTarget && r.xr.getRenderTarget();
+      if (rt && rt.texture && rt.texture.colorSpace !== THREE.LinearSRGBColorSpace) {
+        rt.texture.colorSpace = THREE.LinearSRGBColorSpace;   // fix a frozen sRGB target
+        self.log('xr render target colour space corrected to linear');
+      }
+    });
+    this.el.addEventListener('exit-vr', function () { setOutput(false); });
+    // Desktop fullscreen: A-Frame puts the <canvas> itself into fullscreen,
+    // which hides every HTML overlay — the reticle and the panel vanish. Point
+    // the canvas's request at the whole page instead, so the overlays come too.
+    this.el.addEventListener('loaded', function () {
+      var canvas = self.el.canvas;
+      if (!canvas || !document.documentElement.requestFullscreen) return;
+      canvas.requestFullscreen = function (opts) {
+        return document.documentElement.requestFullscreen(opts);
+      };
+    });
+    // Desktop reticle: hide only for a real XR session (desktop fullscreen is
+    // also "vr-mode" to A-Frame, and the ring should stay there).
+    var reticle = document.getElementById('kit-reticle');
+    this.el.addEventListener('enter-vr', function () {
+      setTimeout(function () {
+        var r = self.el.renderer;
+        if (reticle && r && r.xr && r.xr.isPresenting) reticle.hidden = true;
+      }, 0);
+    });
+    this.el.addEventListener('exit-vr', function () { if (reticle) reticle.hidden = false; });
+    setTimeout(function () { setOutput(false); }, 0);
+  },
+
+  // In-scene error sign. The HTML panel vanishes in VR, so when the diary
+  // records an error a small card is drawn on a canvas and hung off the CAMERA
+  // object (not the #head entity, which is frozen in VR) — it follows the gaze
+  // on desktop and in the headset alike. It shows the FIRST error (usually the
+  // root cause), its code, and how many more followed. Unlit, drawn on top.
+  installErrorSign: function () {
+    var self = this, THREE = AFRAME.THREE;
+    if (!window.KIT || !window.KIT.on) return;
+    var canvas = document.createElement('canvas'); canvas.width = 1024; canvas.height = 500;
+    var g = canvas.getContext('2d');
+    if (!g.roundRect) g.roundRect = function (x, y, w, h) { g.rect(x, y, w, h); };   // older browsers
+    var tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace;
+    var mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false });
+    var mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.39), mat);
+    mesh.position.set(0, -0.32, -1.1); mesh.rotation.x = -0.25; mesh.renderOrder = 10000; mesh.visible = false;
+    mesh.frustumCulled = false;
+    // The reopen tab: a small strip at the bottom of view, shown while the sign is closed.
+    var tabCanvas = document.createElement('canvas'); tabCanvas.width = 512; tabCanvas.height = 80;
+    var tg = tabCanvas.getContext('2d');
+    if (!tg.roundRect) tg.roundRect = function (x, y, w, h) { tg.rect(x, y, w, h); };
+    var tabTex = new THREE.CanvasTexture(tabCanvas); tabTex.colorSpace = THREE.SRGBColorSpace;
+    var tab = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.072),
+      new THREE.MeshBasicMaterial({ map: tabTex, transparent: true, depthTest: false, depthWrite: false }));
+    tab.position.set(0, -0.5, -1.1); tab.rotation.x = -0.35; tab.renderOrder = 10000; tab.visible = false; tab.frustumCulled = false;
+    var first = null, count = 0, attached = false, closed = false, hover = null;   // hover: 'close' | 'open' | null
+    // Where do the details go? That decides what the card asks of the player.
+    //  'mailbox'  — artifact link, runtime granted: Claude already has them.
+    //  'headset'  — Wolvic on a ClassVR headset: the diary is in the device log;
+    //               Claude collects it once the player is back on the Launcher.
+    //  'code'     — nothing automatic (local file, plain browser): the code matters.
+    function route() {
+      var mb = window.KIT.mailbox && window.KIT.mailbox(), lb = window.KIT.logbook && window.KIT.logbook();
+      if (mb && mb.on) return 'mailbox';
+      if (lb && lb.on && window.KIT.headsetBrowser && window.KIT.headsetBrowser()) return 'headset';
+      return 'code';
+    }
+    function codeText() { return '"code ' + (first && first.code || '?') + '"'; }
+    function drawTab() {
+      tg.clearRect(0, 0, 512, 80);
+      tg.fillStyle = hover === 'open' ? '#e07a5f' : 'rgba(192,87,79,0.95)'; tg.beginPath(); tg.roundRect(4, 4, 504, 72, 24); tg.fill();
+      tg.fillStyle = '#ffffff'; tg.font = 'bold 30px sans-serif'; tg.textAlign = 'center'; tg.textBaseline = 'middle';
+      tg.fillText(route() === 'code' ? '▲  Show error  ·  code ' + (first && first.code || '?') : '▲  Show details', 256, 40);
+      tabTex.needsUpdate = true;
+    }
+    function setClosed(c) {
+      closed = c; mesh.visible = !c && !!first; tab.visible = c && !!first;
+      if (c) drawTab();
+    }
+    // Hit-testing: the sign is a mesh on the camera, not an entity, so the
+    // laser and the mouse are tested here. Cross = top-right of the header.
+    var ray = new THREE.Raycaster(), tmpP = new THREE.Vector3(), tmpQ = new THREE.Quaternion(), tmpD = new THREE.Vector3();
+    function hit() {
+      var targets = []; if (mesh.visible) targets.push(mesh); if (tab.visible) targets.push(tab);
+      if (!targets.length) return null;
+      var hits = ray.intersectObjects(targets, false);
+      if (!hits.length) return null;
+      var h = hits[0];
+      if (h.object === tab) return 'open';
+      var uv = h.uv; if (!uv) return null;
+      return (uv.x > 0.86 && uv.y > 0.74) ? 'close' : null;         // the cross, with a generous margin
+    }
+    // The hand's own raycaster is the white line the player aims with; use it
+    // when it exists so the hit-test matches what they see. Fallback: -Z.
+    function fromController(el) {
+      if (self.is3dof && self.is3dof()) {                              // 3DoF: the eyes aim, not the hand
+        var cam3 = self.headObject(); if (!cam3) return false;
+        cam3.getWorldPosition(tmpP); cam3.getWorldQuaternion(tmpQ);
+        tmpD.set(0, 0, -1).applyQuaternion(tmpQ); ray.set(tmpP, tmpD); return true;
+      }
+      var rc = el.components && el.components.raycaster && el.components.raycaster.raycaster;
+      if (rc) { ray.ray.origin.copy(rc.ray.origin); ray.ray.direction.copy(rc.ray.direction); return true; }
+      if (!el.object3D) return false;
+      el.object3D.getWorldPosition(tmpP); el.object3D.getWorldQuaternion(tmpQ);
+      tmpD.set(0, 0, -1).applyQuaternion(tmpQ); ray.set(tmpP, tmpD); return true;
+    }
+    var mouse = null, hands = [];
+    function fromMouse() {
+      var cam = self.headObject(); if (!mouse || !cam || !cam.isCamera) return false;
+      var canvasEl = self.el.canvas; if (!canvasEl) return false;
+      var r = canvasEl.getBoundingClientRect();
+      ray.setFromCamera({ x: ((mouse.x - r.left) / r.width) * 2 - 1, y: -((mouse.y - r.top) / r.height) * 2 + 1 }, cam);
+      return true;
+    }
+    function act(what) {
+      if (what === 'close') setClosed(true); else if (what === 'open') setClosed(false);
+      if (what) { hover = null; if (closed) drawTab(); else draw(); }
+    }
+    // Hover: checked every frame from both hands and the mouse; redraw on change.
+    this.signHover = function () {
+      if (!first || (!mesh.visible && !tab.visible)) return;
+      var h = null;
+      for (var i = 0; i < hands.length && !h; i++) { try { if (fromController(hands[i])) h = hit(); } catch (e) {} }
+      if (!h && mouse) { try { if (fromMouse()) h = hit(); } catch (e) {} }
+      if (h !== hover) { hover = h; if (closed) drawTab(); else draw(); }
+    };
+    ['#left-hand', '#right-hand'].forEach(function (sel) {
+      var el = document.querySelector(sel); if (!el) return;
+      hands.push(el);
+      el.addEventListener('triggerdown', function () {
+        try { if (fromController(el)) { var what = hit(); self.log('sign: trigger on', what || 'nothing'); act(what); } } catch (e) {}
+      });
+    });
+    this.el.addEventListener('loaded', function () {
+      var canvasEl = self.el.canvas; if (!canvasEl) return;
+      canvasEl.addEventListener('mousemove', function (e) { mouse = { x: e.clientX, y: e.clientY }; });
+      canvasEl.addEventListener('mouseleave', function () { mouse = null; });
+      canvasEl.addEventListener('mouseup', function (e) {
+        if (e.button !== 0) return;
+        try { mouse = { x: e.clientX, y: e.clientY }; if (fromMouse()) act(hit()); } catch (err) {}
+      });
+    });
+    function wrap(text, x, y, maxW, lineH, maxLines, dry) {          // returns lines used; dry = measure only
+      var words = String(text).split(/\s+/), line = '', lines = 0;
+      for (var i = 0; i < words.length; i++) {
+        var test = line ? line + ' ' + words[i] : words[i];
+        if (g.measureText(test).width > maxW && line) {
+          if (++lines === maxLines) { if (!dry) g.fillText(line.replace(/.{3}$/, '…'), x, y); return lines; }
+          if (!dry) g.fillText(line, x, y); y += lineH; line = words[i];
+        } else line = test;
+      }
+      if (line) { if (!dry) g.fillText(line, x, y); lines++; }
+      return lines;
+    }
+    function draw() {
+      g.clearRect(0, 0, 1024, 500);
+      // Lay out first: the code line sits right under the body, and the card is
+      // only as tall as what it says.
+      var r0 = route(), body0, foot0;
+      if (r0 === 'mailbox') { body0 = 'Don\'t worry, Claude already has the details. You can continue playing, or take the headset off and tell Claude what you were doing.'; foot0 = codeText() + ' \u2013 Tell this to Claude only if asked.'; }
+      else if (r0 === 'headset') { body0 = 'You can continue playing. When you\'re finished, exit to the ClassVR Launcher screen and Claude can collect what happened (keep your headset awake).'; foot0 = codeText() + ' \u2013 Tell this to Claude only if asked.'; }
+      else { body0 = 'Tell Claude: ' + codeText() + ' and what you were doing when it happened.'; foot0 = ''; }
+      var extra0 = [];
+      if (count > 1) extra0.push('+ ' + (count - 1) + ' more after this one');
+      var fl0 = window.KIT.report && window.KIT.report().flags; if (fl0 && fl0.length) extra0.push('you\'ve marked a moment too');
+      g.font = '38px sans-serif';
+      var bodyLines = wrap(body0, 40, 158, 944, 48, 4, true);
+      var yBody = 158, yFoot = yBody + (bodyLines - 1) * 48 + 58, yExtra = (foot0 ? yFoot : yBody + (bodyLines - 1) * 48) + 46;
+      var bottom = (extra0.length ? yExtra : foot0 ? yFoot : yBody + (bodyLines - 1) * 48) + 34;
+      g.fillStyle = 'rgba(255,255,255,0.96)';
+      g.beginPath(); g.roundRect(8, 8, 1008, Math.min(484, bottom - 8), 36); g.fill();
+      g.fillStyle = '#c0574f'; g.beginPath(); g.roundRect(8, 8, 1008, 96, [36, 36, 0, 0]); g.fill();
+      g.fillStyle = '#ffffff'; g.font = 'bold 50px sans-serif'; g.textBaseline = 'middle';
+      g.fillText('Oops, something didn\'t work', 40, 56);
+      // the close cross, top-right — filled white when the laser or mouse is over it
+      if (hover === 'close') { g.fillStyle = '#ffffff'; g.beginPath(); g.arc(964, 56, 36, 0, Math.PI * 2); g.fill(); g.strokeStyle = '#c0574f'; }
+      else g.strokeStyle = 'rgba(255,255,255,0.9)';
+      g.lineWidth = 6; g.lineCap = 'round';
+      if (hover !== 'close') { g.beginPath(); g.arc(964, 56, 32, 0, Math.PI * 2); g.stroke(); }
+      g.beginPath(); g.moveTo(950, 42); g.lineTo(978, 70); g.moveTo(978, 42); g.lineTo(950, 70); g.stroke();
+      g.fillStyle = '#2b3a49'; g.font = '38px sans-serif'; g.textBaseline = 'alphabetic';
+      wrap(body0, 40, yBody, 944, 48, 4);
+      if (foot0) { g.fillStyle = '#c0574f'; g.font = 'bold 32px sans-serif'; g.fillText(foot0, 40, yFoot); }
+      if (extra0.length) { g.fillStyle = '#6c7d8e'; g.font = '28px sans-serif'; g.fillText(extra0.join(' \u00B7 '), 40, yExtra); }
+      tex.needsUpdate = true;
+    }
+    function attach() {
+      if (attached) return;
+      var cam = self.headObject && self.headObject();
+      if (!cam || !cam.isCamera) return;
+      cam.add(mesh); cam.add(tab); attached = true;
+    }
+    function show(entry, n) {
+      try {
+        if (!first) first = entry; count = n || count + 1;
+        draw(); attach(); setClosed(false);                                // a new error always reopens the sign
+      } catch (e) { /* the sign must never itself break the app */ }
+    }
+    window.KIT.on('error', show);
+    this.el.addEventListener('enter-vr', function () { setTimeout(function () { if (first) { if (closed) drawTab(); else draw(); } }, 50); });
+    // Errors that happened before the scene was ready.
+    var earlier = window.KIT.report().errorList;
+    if (earlier.length) show(earlier[0], earlier.length);
+    this.el.addEventListener('loaded', attach);
+    this.el.addEventListener('enter-vr', function () { setTimeout(attach, 0); });
+  },
+
+  // Two short-lived cards for the "something wrong" marker, drawn like the
+  // error sign but above it: a hint when the player enters VR (the panel is
+  // invisible there, so this is how they learn the gesture), and a confirmation
+  // when a flag is recorded, so they know it registered and what to do next.
+  installFlagCards: function () {
+    var self = this, THREE = AFRAME.THREE;
+    if (!window.KIT || !window.KIT.on) return;
+    function plane(w, h, cw, ch, y, order) {
+      var canvas = document.createElement('canvas'); canvas.width = cw; canvas.height = ch;
+      var g = canvas.getContext('2d');
+      if (!g.roundRect) g.roundRect = function (x, y, w, h) { g.rect(x, y, w, h); };
+      var tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace;
+      var mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false }));
+      mesh.position.set(0, y, -1.1); mesh.renderOrder = order; mesh.visible = false; mesh.frustumCulled = false;
+      return { g: g, tex: tex, mesh: mesh, attached: false };
+    }
+    var card = plane(0.8, 0.25, 1024, 320, 0.02, 10001);          // "Marked for Claude"
+    var ring = plane(0.16, 0.16, 256, 256, -0.06, 10002);          // progress ring, just below centre
+    card.mesh.rotation.x = 0.1;
+    function attach(p) {
+      if (p.attached) return;
+      var cam = self.headObject && self.headObject();
+      if (!cam || !cam.isCamera) return;
+      cam.add(p.mesh); p.attached = true;
+    }
+    // Ring: fills clockwise during the second half of the hold.
+    this.drawRing = function (progress) {
+      try {
+        var g = ring.g; g.clearRect(0, 0, 256, 256);
+        g.lineWidth = 18; g.lineCap = 'round';
+        g.strokeStyle = 'rgba(255,255,255,0.55)'; g.beginPath(); g.arc(128, 128, 96, 0, Math.PI * 2); g.stroke();
+        g.strokeStyle = '#1f3a5f'; g.beginPath();
+        g.arc(128, 128, 96, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, Math.max(0, progress))); g.stroke();
+        ring.tex.needsUpdate = true; attach(ring); ring.mesh.visible = true;
+      } catch (e) {}
+    };
+    this.hideRing = function () { ring.mesh.visible = false; };
+    // Card: full for 3 s, then fades over 1 s (opacity driven from tick).
+    this.cardFade = null;
+    window.KIT.on('flag', function (entry, n) {
+      try {
+        var g = card.g; g.clearRect(0, 0, 1024, 320);
+        g.fillStyle = 'rgba(255,255,255,0.96)'; g.beginPath(); g.roundRect(8, 8, 1008, 304, 36); g.fill();
+        g.fillStyle = '#1f3a5f'; g.beginPath(); g.roundRect(8, 8, 1008, 96, [36, 36, 0, 0]); g.fill();
+        g.fillStyle = '#ffffff'; g.font = 'bold 50px sans-serif'; g.textBaseline = 'middle'; g.fillText('Marked for Claude', 40, 56);
+        g.fillStyle = '#2b3a49'; g.font = '40px sans-serif'; g.textBaseline = 'alphabetic';
+        g.fillText('Carry on — or take the headset off and', 40, 180);
+        g.fillText('tell Claude what you saw.' + (n > 1 ? '  (' + n + ' marks)' : ''), 40, 240);
+        card.tex.needsUpdate = true; attach(card);
+        card.mesh.material.opacity = 1; card.mesh.visible = true;
+        self.cardFade = { shownAt: performance.now(), mesh: card.mesh };
+      } catch (e) {}
+    });
+    this.el.addEventListener('loaded', function () { attach(card); attach(ring); });
+  },
+
+  tick: function (time, delta) {
+    // "Something wrong" gesture: both triggers held. 0–1 s nothing; 1–2 s the
+    // ring fills; at 2 s the flag is recorded. Releasing at any point cancels.
+    var gs = this.gesture;
+    if (gs) {
+      if (gs.left && gs.right) {
+        if (!gs.since) gs.since = performance.now();                 // wall clock, not the scene clock
+        var held = performance.now() - gs.since;
+        if (!gs.fired && held >= 1000) this.drawRing && this.drawRing((held - 1000) / 1000);
+        if (!gs.fired && held >= 2000) {
+          gs.fired = true; this.hideRing && this.hideRing();
+          try { window.KIT.flag('both triggers'); } catch (e) {}
+        }
+      } else if (gs.since) { gs.since = 0; gs.fired = false; this.hideRing && this.hideRing(); }
+    }
+    if (this.signHover) this.signHover();
+    var cf = this.cardFade;
+    if (cf) {
+      var age = performance.now() - cf.shownAt;
+      if (age > 4000) { cf.mesh.visible = false; this.cardFade = null; }
+      else if (age > 3000) cf.mesh.material.opacity = 1 - (age - 3000) / 1000;
+    }
+    // Frame rate, once a second, for the diary.
+    this.frames++;
+    if (time - this.fpsAt >= 1000) {
+      if (this.fpsAt) { try { window.KIT.fps = Math.round(this.frames * 1000 / (time - this.fpsAt)); } catch (e) {} }
+      this.fpsAt = time; this.frames = 0;
+    }
+    // Poll both thumbsticks off the gamepad too. In the xr-standard mapping
+    // the stick is axes[2..3]; axes[0..1] are the touchpad, which a Quest
+    // doesn't have — so axes[0] reads a permanent zero.
+    var s = this.el.xrSession ||
+            (this.el.renderer && this.el.renderer.xr && this.el.renderer.xr.getSession());
+    if (s && s.inputSources) {
+      var xr = this.el.renderer && this.el.renderer.xr;
+      var frame = xr && xr.getFrame && xr.getFrame(), ref = xr && xr.getReferenceSpace && xr.getReferenceSpace();
+      for (var i = 0; i < s.inputSources.length; i++) {
+        var src = s.inputSources[i];
+        // Point the laser where the controller POINTS, not how it is held.
+        // A-Frame poses the hand entity by the WebXR *grip* pose, whose forward
+        // exits the top of the controller — on ClassVR that reads as aiming up.
+        // WebXR also exposes targetRaySpace, the pointing pose; the offset
+        // between them is fixed, so once per VR session we express the pointing
+        // forward in the hand's local space and set the raycaster to it.
+        var hand = src.handedness;
+        if ((hand === 'left' || hand === 'right') && !this.rayAligned[hand] && src.targetRaySpace && frame && ref) {
+          var tp = frame.getPose(src.targetRaySpace, ref), el = document.querySelector('#' + hand + '-hand');
+          if (tp && el && el.components.raycaster) {
+            var THREE = AFRAME.THREE, o = tp.transform.orientation;
+            var fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(new THREE.Quaternion(o.x, o.y, o.z, o.w));
+            var wq = el.object3D.getWorldQuaternion(new THREE.Quaternion());
+            var local = fwd.applyQuaternion(wq.invert()).normalize();
+            el.setAttribute('raycaster', 'direction', local.x.toFixed(4) + ' ' + local.y.toFixed(4) + ' ' + local.z.toFixed(4));
+            this.rayAligned[hand] = true;
+            this.log('laser aligned to pointing pose (' + hand + '):', local.x.toFixed(2), local.y.toFixed(2), local.z.toFixed(2));
+          }
+        }
+        if (!src.gamepad) continue;
+        var ax = src.gamepad.axes;
+        var sx = ax.length > 2 ? ax[2] : ax[0], sy = ax.length > 3 ? ax[3] : ax[1];
+        if (src.handedness === 'right') this.thumb(sx);
+        if (src.handedness === 'left')  { this.move.x = sx || 0; this.move.y = sy || 0; }
+      }
+    }
+    if (!this.is3dof()) this.applyMove(delta);                // 3DoF: no stick movement (the eyes stay where the rig is)
+  },
+
+  // 3DoF lock: wrap renderer.xr.getCamera(). three.js calls it once per frame
+  // inside render(), after it has written this frame's pose into the eye
+  // cameras and before anything is drawn — the last moment the matrices can be
+  // changed and the only one where the change is guaranteed to be what is drawn.
+  installLock: function () {
+    var self = this, sceneEl = this.el;
+    function wrap() {
+      var r = sceneEl.renderer, xr = r && r.xr;
+      if (!xr || xr.__kitLock) return;
+      var original = xr.getCamera.bind(xr), busy = false;
+      xr.getCamera = function () {
+        var cam = original();
+        if (xr.isPresenting && cam && !busy) { busy = true; try { self.enforceLock(cam); } finally { busy = false; } }
+        return cam;
+      };
+      xr.__kitLock = true;
+    }
+    if (sceneEl.renderer) wrap(); else sceneEl.addEventListener('loaded', wrap);
+  },
+
+  // Recompose the XR cameras at the locked point. `xrCamera` is three.js's
+  // ArrayCamera (its `.cameras` are the eyes) — or, from the self-check, a
+  // pretend one. Exposed so the desktop preview can feed it eyes and measure.
+  //   target  = rig + (0, HEAD_HEIGHT, 0) + give × (head − head at VR start), capped
+  //   each eye = target + (eye − midpoint of the eyes)      (stereo; mono: target)
+  enforceLock: function (xrCamera) {
+    var cams = xrCamera && xrCamera.cameras;
+    if (!cams || !cams.length) return;
+    var lk = this.lock, give = this.data.give, cap = Math.max(0.4, give * 4);
+    var origin = this._lo, mid = this._lm, e = this._le, p = this._lp, q = this._lq, s = this._ls, t = this._lt, g = this._lg;
+    this.rigEl.object3D.getWorldPosition(origin); origin.y += this.HEAD_HEIGHT;
+    mid.set(0, 0, 0);
+    for (var i = 0; i < cams.length; i++) mid.add(e.setFromMatrixPosition(cams[i].matrixWorld));
+    mid.multiplyScalar(1 / cams.length);
+    if (!lk.ref) lk.ref = mid.clone();
+    lk.moved = Math.max(lk.moved, mid.distanceTo(lk.ref));
+    g.copy(mid).sub(lk.ref).multiplyScalar(give);
+    if (g.length() > cap) g.setLength(cap);
+    origin.add(g);
+    lk.held = Math.max(lk.held, g.length());
+    for (var j = 0; j < cams.length; j++) {
+      cams[j].matrixWorld.decompose(p, q, s);
+      t.copy(origin); if (this.data.stereo) t.add(p.sub(mid));
+      cams[j].matrixWorld.compose(t, q, s);
+      cams[j].matrixWorldInverse.copy(cams[j].matrixWorld).invert();
+    }
+    xrCamera.matrixWorld.decompose(p, q, s);
+    xrCamera.matrixWorld.compose(origin, q, s);
+    xrCamera.matrixWorldInverse.copy(xrCamera.matrixWorld).invert();
+    // The user camera (headObject) was already given the real pose by three.js;
+    // move it too so the gaze cursor and anything hung off it aim from the
+    // locked point, not from wherever the player's real head is.
+    var head = this.headObject();
+    if (head && head.isCamera) {
+      head.matrixWorld.decompose(p, q, s);
+      head.matrixWorld.compose(origin, q, s);
+      head.matrixWorldInverse.copy(head.matrixWorld).invert();
+      for (var k = 0; k < head.children.length; k++) head.children[k].updateMatrixWorld(true);
+    }
+    lk.frames++;
+  },
+
+  // Slide the rig in the direction the player is LOOKING, not the direction
+  // the rig faces — after a snap turn or a physical turn those differ, and
+  // "forward" must always mean "where I'm facing". Pushing the stick forward
+  // reports a negative y in the xr-standard mapping, hence the sign flip.
+  applyMove: function (delta) {
+    var head = this.headObject();
+    if (!delta || !this.rigEl || !head) return;
+    var x = this.move.x, y = this.move.y;
+    if (Math.abs(x) < this.MOVE_DEAD && Math.abs(y) < this.MOVE_DEAD) return;
+    var THREE = AFRAME.THREE;
+    head.updateWorldMatrix(true, false);
+    var q = head.getWorldQuaternion(new THREE.Quaternion());
+    var fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(q); fwd.y = 0; fwd.normalize();
+    var rgt = new THREE.Vector3(1, 0, 0).applyQuaternion(q);  rgt.y = 0; rgt.normalize();
+    var step = this.MOVE_SPEED * (delta / 1000);
+    var rig = this.rigEl.object3D;
+    rig.position.addScaledVector(fwd, -y * step);
+    rig.position.addScaledVector(rgt,  x * step);
+  },
+
+  // The object that really carries the head pose. In VR, three.js writes the
+  // headset's position and rotation onto the THREE camera object INSIDE the
+  // #head entity; the entity itself is frozen at its pre-VR orientation
+  // (look-controls stops updating it once immersed). On desktop the camera
+  // child has an identity local transform and look-controls rotates the entity,
+  // so reading the camera's WORLD transform is correct in both cases. Reading
+  // the entity is the classic mistake: "forward" then means "where I was facing
+  // when I pressed Enter VR", and turning your head appears to do nothing.
+  headObject: function () {
+    if (!this.headEl) return null;
+    return this.headEl.getObject3D('camera') || this.headEl.object3D;
+  },
+
+  thumb: function (x) {
+    if (typeof x !== 'number') return;
+    if (this.snapArmed && Math.abs(x) >= this.SNAP_ON) { this.snapTurn(x > 0 ? 1 : -1); this.snapArmed = false; }
+    else if (!this.snapArmed && Math.abs(x) <= this.SNAP_OFF) { this.snapArmed = true; }
+  },
+
+  // Rotate about the player's head, not the rig origin. Room-scale puts the
+  // player wherever they stand in their guardian; pivoting on the rig would
+  // swing them round a point outside their body, which reads as being shoved.
+  snapTurn: function (dir) {
+    var THREE = AFRAME.THREE;
+    var head = this.headObject();
+    if (!this.rigEl || !head) return;
+    var rig = this.rigEl.object3D;
+    head.updateWorldMatrix(true, false);
+    var before = new THREE.Vector3(); head.getWorldPosition(before);
+    rig.rotation.y += dir * -this.SNAP_DEG * Math.PI / 180;
+    rig.updateMatrixWorld(true);
+    head.updateWorldMatrix(true, false);
+    var after = new THREE.Vector3(); head.getWorldPosition(after);
+    rig.position.x += before.x - after.x;
+    rig.position.z += before.z - after.z;
+    rig.updateMatrixWorld(true);
+    this.diag.turns++;
+  }
+});
+</script>
+</head>
+<body>
+<div id="kit-reticle"></div>
+
+<div id="kit-panel"><b>{{APP_NAME}}</b><span class="build">build …</span><span>starting…</span></div>
+
+<!-- ======================================================================
+     YOUR SCENE. Add objects below the rig. Coordinates are metres:
+     x right, y up, z toward you — so negative z is in front of the player.
+     The rig sits on the floor at 0 0 0; in a headset the runtime supplies
+     the player's real eye height.
+     ====================================================================== -->
+<!-- xr-kit="dof: 6" — designed for 6DoF headsets (full tracking).
+     xr-kit="dof: 3" — designed for 3DoF headsets: only turning counts. On a 6DoF
+     headset the kit pins the eyes 1.6 m above the rig, hides the lasers, and any
+     trigger selects what the player is looking at (right stick still turns). -->
+<a-scene xr-kit="dof: {{DOF}}"
+  background="color: #bfe3f7"
+  renderer="colorManagement: true; antialias: true; toneMapping: no"
+  vr-mode-ui="enabled: true"
+  device-orientation-permission-ui="enabled: true">
+
+  <!-- ground and sky -->
+  <a-plane position="0 0 0" rotation="-90 0 0" width="40" height="40" color="#a4d29a" checker-ground></a-plane>
+  <a-sky color="#bfe3f7"></a-sky>
+
+  <!-- light. three.js uses physical light units now — these values are
+       roughly double what older tutorials suggest, and that is correct. -->
+  <a-entity light="type: hemisphere; color: #ffffff; groundColor: #d8eed2; intensity: 2.25"></a-entity>
+  <a-entity light="type: directional; color: #fff6e8; intensity: 1.5" position="3 5 2"></a-entity>
+
+  <!-- XR rig: the player. Move this to move the player. -->
+  <a-entity id="rig" position="0 0 0">
+    <!-- #tracking is where the headset's own movement lands. Leave it alone: in a
+         6DoF app it never moves; in a 3DoF app xr-kit repositions it every frame
+         to cancel the head's movement. Head and hands must stay inside it. -->
+    <a-entity id="tracking">
+      <a-entity id="head" camera="active: true"
+                look-controls="pointerLockEnabled: false"
+                wasd-controls="acceleration: 20"
+                position="0 1.6 0">
+        <!-- gaze cursor: casts from the screen centre. Desktop: left-click = trigger.
+             3DoF apps: also the headset's pointer — any trigger presses it. -->
+        <a-entity id="gaze" cursor="fuse: false" raycaster="objects: .clickable; far: 40"></a-entity>
+      </a-entity>
+      <!-- model: false — the kit reads the sticks/buttons off the gamepad itself
+           (see the tick loop). A-Frame's controller MODEL animation throws on
+           ClassVR ("reading 'thumbstick'") because the model's named parts never
+           load there; with no model that path is gone. The white laser line comes
+           from the raycaster, not the model, so it stays. On the headset the kit
+           re-aims the laser to the controller's real POINTING pose at runtime
+           (see xr-kit tick); the `direction` below is only the fallback used
+           before that measurement and on desktop. -->
+      <a-entity id="left-hand"  laser-controls="hand: left; model: false"  raycaster="objects: .clickable; direction: 0 -0.82 -0.57"></a-entity>
+      <a-entity id="right-hand" laser-controls="hand: right; model: false" raycaster="objects: .clickable; direction: 0 -0.82 -0.57"></a-entity>
+    </a-entity>
+  </a-entity>
+
+  <!-- ADD YOUR CONTENT HERE -->
+
+</a-scene>
+
+<script>
+  // Status panel: what this browser can and can't do, plus live diagnostics.
+  (function () {
+    var el = document.getElementById('kit-panel');
+    function row(label, state, note) {
+      var cls = state === true ? 'ok' : state === false ? 'bad' : 'warn';
+      var mark = state === true ? '✔' : state === false ? '✘' : '•';
+      return '<div class="' + cls + '">' + mark + ' ' + label +
+             (note ? ' <span style="opacity:.7">' + note + '</span>' : '') + '</div>';
+    }
+    var lines = [], xrLine = '', problemLine = '', checksLine = '', mailboxLine = '', flagLine = '';
+    lines.push(row('Secure context', !!window.isSecureContext));
+    lines.push(row('A-Frame', typeof AFRAME !== 'undefined',
+                   typeof AFRAME !== 'undefined' ? 'v' + AFRAME.version + ' (bundled)' : 'aframe.min.js missing'));
+    lines.push(row('navigator.xr', 'xr' in navigator));
+    // Inside another page's frame (an artifact viewer, an LMS embed) WebXR is
+    // blocked by the frame's permission policy: isSessionSupported throws
+    // SecurityError and no VR button appears. The frame also blocks opening the
+    // page on its own, so there is no way out from here — headsets use the
+    // ClassCloud build (QR code), which is loaded top-level.
+    var framed = false;
+    try { framed = window.top !== window.self; } catch (e) { framed = true; }
+
+    function render() {
+      el.innerHTML = '<b>{{APP_NAME}}</b><span class="build">build ' + window.BUILD + '</span>' + targetLine()
+        + lines.join('') + xrLine + problemLine + flagLine + checksLine + mailboxLine
+        + controlsHtml();
+    }
+    // Which headset the app is designed for. A 3DoF app is played on a 6DoF
+    // headset with the head pinned in place, so the person holding it knows
+    // that walking about is meant to do nothing.
+    function targetLine() {
+      var s = document.querySelector('a-scene'), v = s && s.getAttribute('xr-kit');
+      var three = (v && typeof v === 'object') ? v.dof === 3 : /dof\s*:\s*3/.test(String(v || ''));
+      return '<div class="target">' + (three ? 'Designed for 3DoF headsets — only turning counts; walking about is ignored on purpose'
+                                             : 'Designed for 6DoF headsets') + '</div>';
+    }
+    function controlsHtml() {
+      var c = window.KIT_CONTROLS || {};
+      var desktop = c.desktop || [];
+      function list(title, items) {
+        if (!items || !items.length) return '';
+        return '<h4>' + title + '</h4><ul>' + items.map(function (t) {
+          return '<li>' + String(t).replace(/</g, '&lt;') + '</li>';
+        }).join('') + '</ul>';
+      }
+      return '<div class="sub">' + list('Headset', c.headset) + list('Desktop', desktop) + '</div>';
+    }
+    render();
+
+    // Plain words when something breaks — the details are in the diary, for Claude.
+    if (window.KIT) {
+      window.KIT.on('error', function (entry, count) {
+        if (!window.__kitFirstCode) window.__kitFirstCode = entry.code;
+        var mb = window.KIT.mailbox && window.KIT.mailbox(), lb = window.KIT.logbook && window.KIT.logbook();
+        var how = (mb && mb.on) ? '— Claude has the details'
+                : (lb && lb.on && window.KIT.headsetBrowser && window.KIT.headsetBrowser()) ? '— exit to the ClassVR Launcher when finished and Claude can collect what happened'
+                : '— tell Claude: "code ' + window.__kitFirstCode + '"';
+        problemLine = row('Oops, something didn\'t work', false, how + (count > 1 ? ' (+' + (count - 1) + ' more)' : ''));
+        render();
+      });
+      window.KIT.on('flag', function (entry, n) {
+        var m = Math.floor(entry.t / 60), sec = Math.floor(entry.t % 60);
+        flagLine = row('Marked a problem at ' + m + ':' + (sec < 10 ? '0' : '') + sec, null,
+                       '— tell Claude what you saw' + (n > 1 ? ' (' + n + ' marks)' : ''));
+        render();
+      });
+      window.KIT.on('mailbox', function (state, n) {
+        mailboxLine = row(state === 'sent' ? 'Report sent to the app\'s creator' : 'Reports from this page go to the app\'s creator',
+                          true, state === 'sent' && n > 1 ? '(' + n + ')' : '');
+        render();
+      });
+      window.KIT.on('logbook', function (reason, n) {
+        if (mailboxLine) return;                                             // the link already says reports reach the creator
+        mailboxLine = row('Play record kept for the app\'s creator', true, /Android/i.test(navigator.userAgent) && 'xr' in navigator ? '(read from the headset log)' : '');
+        render();
+      });
+      window.KIT.on('checks', function (results) {
+        var bad = results.filter(function (r) { return !r.ok; });
+        checksLine = bad.length
+          ? bad.map(function (r) { return row('Check failed: ' + r.name, false, r.detail); }).join('')
+          : row('All ' + results.length + ' self-checks passed', true);
+        render();
+      });
+    }
+
+    if ('xr' in navigator) {
+      navigator.xr.isSessionSupported('immersive-vr').then(function (s) {
+        try { window.KIT.setImmersive(s); } catch (e) {}
+        xrLine = row('immersive-vr', s, s ? 'press the VR button' : 'no VR device here'); render();
+      }).catch(function (e) {
+        var why = String(e && e.name || e);
+        if (framed) why = 'blocked inside a frame — headsets: scan the QR code instead';
+        xrLine = row('immersive-vr', false, why); render();
+      });
+    } else { xrLine = row('immersive-vr', false, 'no WebXR in this browser'); render(); }
+  })();
+</script>
+</body>
+</html>

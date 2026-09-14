@@ -1,0 +1,14 @@
+{
+  "_comment": "Copy this file to .claude/settings.json in any prototypes repository. Anyone who opens that repo in Claude Code (and trusts the folder) gets the kit registered and enabled automatically.",
+  "extraKnownMarketplaces": {
+    "classvr-prototypes": {
+      "source": {
+        "source": "github",
+        "repo": "ClassVR-Prototypes/classvr-prototyping-kit"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "classvr-prototyping-kit@classvr-prototypes": true
+  }
+}

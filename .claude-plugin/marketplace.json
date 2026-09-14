@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "classvr-prototypes",
+  "description": "Plugins for building WebXR prototypes for ClassVR headsets without a terminal.",
+  "owner": {
+    "name": "Avantis — Project Ptah",
+    "url": "https://github.com/ClassVR-Prototypes"
+  },
+  "plugins": [
+    {
+      "name": "classvr-prototyping-kit",
+      "source": "./plugins/classvr-prototyping-kit",
+      "displayName": "ClassVR Prototyping Kit",
+      "description": "Create a working WebXR scene, share it on a permanent link, and publish it to ClassCloud as a scannable QR code — no terminal, no libraries to install.",
+      "version": "0.15.2",
+      "author": { "name": "Avantis — Project Ptah" },
+      "repository": "https://github.com/ClassVR-Prototypes/classvr-prototyping-kit",
+      "keywords": ["webxr", "classvr", "a-frame", "vr", "prototype", "eduverse"],
+      "category": "development"
+    }
+  ]
+}

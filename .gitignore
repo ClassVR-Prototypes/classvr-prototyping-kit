@@ -1,0 +1,11 @@
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+# Python caches from running the kit's scripts locally
+__pycache__/
+*.pyc
+# Scratch and build output — prototypes live in their own repos, not here
+_scratch/
+dist/
+*.plugin
