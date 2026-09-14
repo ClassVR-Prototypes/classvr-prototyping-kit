@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Render the ClassVR QR code for a playlist as a PNG.
+"""Render a QR code for the ClassVR headset as a PNG.
 
     python3 make_qr.py --category-id 1035190927 --title "XR Prototypes" --out qr.png
+    python3 make_qr.py --url https://classvr-prototypes.github.io/xr-prototype-test/planet-walk/ \
+                       --title "Planet Walk" --out qr-pages.png
 
-The headset's built-in scanner understands `AV:CT:<categoryId>` — it selects
-that playlist on the device. The QR only depends on the category id, so it is
-stable across every rebuild and re-publish; generate it once and keep it.
+Two payloads. `--category-id` writes `AV:CT:<categoryId>`, which the headset's
+scanner understands as "select this playlist". `--url` writes the plain URL,
+which the scanner opens in the headset browser (tested on ClassVR, Sept 2026) —
+this is the one for a GitHub Pages link. Either QR only depends on its id/URL,
+so it is stable across every rebuild; generate it once and keep it.
 
 Prints JSON: {ok, payload, out}
 """
@@ -20,19 +24,22 @@ def ensure(mod, pkg):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--category-id', required=True, type=int)
+    ap.add_argument('--category-id', type=int, help='ClassCloud playlist id -> AV:CT payload')
+    ap.add_argument('--url', help='plain https URL payload (e.g. a GitHub Pages link)')
     ap.add_argument('--title', default='XR Prototypes')
     ap.add_argument('--subtitle', default='Scan with the ClassVR headset scanner')
     ap.add_argument('--out', required=True)
     a = ap.parse_args()
+    if (a.category_id is None) == (a.url is None):
+        print(json.dumps({'ok': False, 'error': 'give exactly one of --category-id or --url'})); return 2
 
     qrcode = ensure('qrcode', 'qrcode')
     ensure('PIL', 'pillow')
     from PIL import Image, ImageDraw, ImageFont
     from qrcode.constants import ERROR_CORRECT_M
 
-    payload = f'AV:CT:{a.category_id}'
-    qr = qrcode.QRCode(error_correction=ERROR_CORRECT_M, box_size=16, border=4)
+    payload = a.url if a.url else f'AV:CT:{a.category_id}'
+    qr = qrcode.QRCode(error_correction=ERROR_CORRECT_M, box_size=16 if not a.url else 10, border=4)
     qr.add_data(payload); qr.make(fit=True)
     img = qr.make_image(fill_color='black', back_color='white').convert('RGB')
 

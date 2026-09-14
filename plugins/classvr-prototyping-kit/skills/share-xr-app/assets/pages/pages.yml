@@ -1,0 +1,42 @@
+# Publishes every kit app in this repo to GitHub Pages.
+#
+# Needs one repo setting that cannot be committed: Settings -> Pages ->
+# "Build and deployment" -> Source: GitHub Actions. Until that is set,
+# the deploy step fails with "Pages site not configured".
+name: Publish prototypes to Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble the site
+        run: python3 .github/scripts/build_pages.py --out _site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

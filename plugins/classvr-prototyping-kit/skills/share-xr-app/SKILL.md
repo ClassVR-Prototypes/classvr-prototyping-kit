@@ -2,47 +2,63 @@
 name: share-xr-app
 description: >
   This skill should be used when the user asks to "share my XR app", "give me a link
-  to the app", "put it in an artifact", "update the artifact", "refresh the link",
-  "make the link show the latest version", or invokes /share-xr-app. It builds the
-  app into one file, verifies it, and publishes it as a Claude Artifact — a web
-  page with a permanent link anyone with access can open and reload. It is also
-  run automatically at the end of /new-xr-app and after every edit to an app, so
-  the link is never behind the folder.
+  to the app", "put it on GitHub Pages", "publish the web page", "put it in an
+  artifact", "update the artifact", "refresh the link", "make the link show the
+  latest version", or invokes /share-xr-app. It builds the app, verifies it, and
+  puts it on a permanent link: a GitHub Pages URL when the app lives in a GitHub
+  repository (the normal case in Claude Code), otherwise a Claude Artifact. It is
+  also run automatically at the end of /new-xr-app and after every edit to an
+  app, so the link is never behind the folder, and it always ends by putting the
+  link in the chat.
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # Share XR app
 
-Put the app on a link. The first run creates a Claude Artifact for the app and
-records its URL in `xr-project.json`; every later run — from any session, any
-day — updates that same artifact in place. People who have the link just reload
-the page to see the latest build; the build number on the panel tells them
-which one they are looking at.
+Put the app on a link. The first run creates the link and records it in
+`xr-project.json`; every later run — from any session, any day — updates the
+same link. People who have it just reload to see the latest build; the build
+number on the panel tells them which one they are looking at.
 
-This is the **desktop-browser** route: for looking at the app, sharing it with
-colleagues, and checking a change landed. The **headset** route is still
-`/publish-xr-app` (ClassCloud + QR). They share the same build numbers.
+There are two kinds of link, and **where the app lives decides which**:
+
+| The app folder is… | Route | Link | Enter VR on a headset? |
+|---|---|---|---|
+| inside a git repository with a GitHub remote | **A — GitHub Pages** | `https://<owner>.github.io/<repo>/<slug>/` | **Yes** — a plain HTTPS page; scan a QR of it on the headset |
+| a plain folder (Cowork, a local session, no repo) | **B — Claude Artifact** | `https://claude.ai/…/artifact/…` | No — the viewer's frame blocks WebXR |
+
+Route A is preferred whenever it is available. The headset route through
+ClassCloud (`/publish-xr-app`) still exists and shares the same build numbers;
+with a Pages link it becomes optional — useful when someone wants the app in a
+ClassCloud playlist, not needed just to get it onto a headset.
 
 ## Outcome
 
-- One self-contained page published as an Artifact, at a URL that never changes
-- `xr-project.json` carrying `artifact.url`, `artifact.build`, `artifact.owner`
-- The artifact card on screen as the last thing in the turn (the card *is* the
-  link — never paste the URL into the reply unless asked)
-- `index.html` written back to the folder if the build number bumped
+- The app on a URL that never changes, showing the latest verified build
+- `xr-project.json` carrying `pages.*` (route A) or `artifact.*` (route B)
+- **The link in the chat**, as the last line of the turn, as a plain clickable
+  URL — on route A always; on route B the artifact card is the link, so don't
+  also paste the URL unless asked
+- `index.html` written back if the build number bumped
 
 ## Steps
 
 Do these in order. Nothing here asks the user a question except the ownership
-case in step 5.
+case in route B.
 
-### 1. Locate and stage the project
+### 1. Locate the project and pick the route
 
-The folder with `index.html` and `xr-project.json`. In a cloud session stage
-`index.html`, every local `<script src="./…">` it references, and
-`xr-project.json` into the workspace with the same layout. Scripts take that
-staged folder as `--project`.
+The folder with `index.html` and `xr-project.json`. Then, from inside it:
+
+    git rev-parse --show-toplevel        # repo root, or an error if not a repo
+    git remote get-url origin            # https://github.com/<owner>/<repo>(.git)
+
+Both succeed and the remote is on `github.com` → **route A**. Anything else
+(not a repo, no remote, a non-GitHub host, or `git` unavailable) → **route B**.
+In a Cowork session with a connected folder, stage `index.html`, every local
+`<script src="./…">` it references, and `xr-project.json` into the workspace
+with the same layout first; scripts take that staged folder as `--project`.
 
 ### 2. Build
 
@@ -50,7 +66,9 @@ staged folder as `--project`.
 
 Same script as the headset publish: inlines every local script into
 `dist/<slug>-build<N>.html`, bumps the build number only if the source changed.
-Note `build`, `bumped` and `output`.
+Note `build`, `bumped` and `output`. On route A the built file is only used
+for verification — Pages serves the folder itself — but the bump is what stamps
+the new build number into the manifest and the panel.
 
 ### 3. Verify — do not skip
 
@@ -60,9 +78,96 @@ Note `build`, `bumped` and `output`.
 Exit `0`: continue. Exit `1`: **stop**, say what failed in the user's terms, fix
 it, restart from step 2. A broken build must never replace a working link. Exit
 `3`: continue, but say the build was not verified. Do **not** send
-`preview.png` in this flow — the artifact card is what the turn ends on.
+`preview.png` in this flow — the link is what the turn ends on.
 
-### 4. Convert to artifact form
+Then follow **Route A** or **Route B** below, and finish with step 6.
+
+## Route A — GitHub Pages
+
+### A4. Make sure the repository can publish
+
+Look for `.github/workflows/pages.yml` at the repo root. If it is missing, the
+repo has never been set up for Pages; do it now, once, from the kit's templates:
+
+- copy `${CLAUDE_PLUGIN_ROOT}/skills/share-xr-app/assets/pages/pages.yml`
+  to `.github/workflows/pages.yml`
+- copy `${CLAUDE_PLUGIN_ROOT}/skills/share-xr-app/assets/pages/build_pages.py`
+  to `.github/scripts/build_pages.py`
+- append the lines in `${CLAUDE_PLUGIN_ROOT}/skills/share-xr-app/assets/pages/gitignore-lines`
+  to the repo's `.gitignore` (create it if needed)
+
+and tell the user the **one thing that cannot be done from here**: on
+github.com, *Settings → Pages → Build and deployment → Source: GitHub Actions*,
+a single dropdown, once per repository. (The Pages settings API is blocked from
+Claude sessions; a workflow using `actions/configure-pages` with
+`enablement: true` may also do it on its first run if the repo allows, so it is
+worth trying before asking.) Until that is set the deploy job fails with "Pages
+site not configured" — if the user reports the link is 404 after a few minutes,
+this is the first thing to check.
+
+The site builder serves every folder that has an `xr-project.json` at
+`/<slug>/` (slug from the manifest, so "Planet Walk" is `/planet-walk/`), plus
+an index page listing them. Apps are ordinary folders at the repo root; nothing
+else about the repo layout matters.
+
+### A5. Commit and push
+
+Stage only what the site needs: the app folder's `index.html`,
+`xr-project.json` and any local libraries it references (`aframe.min.js`,
+`cannon.iife.js`). Never commit `dist/` or `.preview/`. Commit with a message in
+the user's words ("Planet Walk: add the red table — build 4") and push to the
+current branch.
+
+Work out the URL from the remote:
+
+    https://github.com/<Owner>/<repo>.git  →  https://<owner-lowercase>.github.io/<repo>/<slug>/
+
+(If the repo is itself named `<owner>.github.io`, drop the `/<repo>` part.)
+
+Record it:
+
+    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/manifest.py --project "<project>" \
+        --set pages.url="<url>" --set pages.repo="<Owner>/<repo>" --set pages.build=<N> --touch-pages
+
+If the manifest changed after the commit (it did: `pages.*`), amend or add a
+second small commit so the repo's copy matches.
+
+**Which branch matters.** The workflow publishes `main`.
+
+- On `main`: the site rebuilds on its own; the new build is live in about
+  1–2 minutes.
+- On any other branch (Claude Code on the web always works on a `claude/…`
+  branch): the change is pushed but **not live until it is merged**. If a
+  GitHub CLI or API is reachable in the session and the user asked for the app
+  to be live, open the pull request and merge it. Otherwise say plainly: "Press
+  **Create PR**, then **Merge** on GitHub, and the link goes live a minute or
+  two later" — two clicks, no other steps.
+
+**Caching.** Pages sits behind a CDN with a 10-minute cache. Someone who loaded
+the page recently may still see the old build after a reload; the build number
+on the panel is how to tell. If that happens, give them the same URL with
+`?b=<N>` on the end, which fetches fresh.
+
+**Headsets.** A Pages URL is a top-level HTTPS page, so **Enter VR works** and
+a plain QR code of the URL opens it straight in the headset browser (tested on
+ClassVR, Sept 2026). If the user wants a QR for the Pages link:
+
+    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/make_qr.py \
+        --url "<url>" --title "<App Name>" --subtitle "Scan to open on the headset" \
+        --out "<project>/qr-pages.png"
+
+and render it last (it can be committed to the app folder; the URL never
+changes, so neither does the QR).
+
+**What Pages does not do.** The artifact mailbox (route B) does not exist here:
+browser testers' reports are not collected automatically. Headset play is still
+covered by `/check-headset`, which reads the headset's own log through
+ClassCloud. Everything in the repo is public, so say so once on the first
+share: fine for prototypes, not for anything private.
+
+## Route B — Claude Artifact
+
+### B4. Convert to artifact form
 
     python3 ${CLAUDE_PLUGIN_ROOT}/skills/share-xr-app/scripts/artifact.py \
         --build "<output from step 2>"
@@ -78,7 +183,7 @@ ClassCloud, which wants a complete document.
 The output path is stable (no build number in the name) on purpose: within one
 session, republishing the same path is what keeps the same URL.
 
-### 5. Publish
+### B5. Publish
 
 Read `artifact` from the manifest.
 
@@ -141,32 +246,53 @@ file (the full document, step 2 output), then
 `artifact.kind="desktop"` and the id. If neither route exists, say a link can't
 be made from this session and attach the build file instead.
 
-### 6. Write back and report
+## 6. Write back and report
 
-Write `xr-project.json` — and `index.html` if `bumped` was true — back to the
-user's folder with `display: "attach"`. Do **not** write `dist/` back for a
-share; only the headset publish keeps a copy of what it uploaded.
+Route A: the repo *is* the folder; nothing to write back beyond the commit.
+Route B: write `xr-project.json` — and `index.html` if `bumped` was true — back
+to the user's folder with `display: "attach"`. Do **not** write `dist/` back for
+a share; only the headset publish keeps a copy of what it uploaded.
 
-Nothing is rendered after the artifact card. One sentence: the app name, "build
-N is live on the link", and — first share only — that the link is private to
-them until they use the page's **Share** menu, and that viewers need to be
-signed in to Claude. On an update: "anyone with the link just reloads".
+Then one or two sentences, and **the link is the last line**:
 
-Never explain the artifact tool, the conversion, or the manifest unless asked.
+- Route A, first share: the app name, "build N", where it will appear and
+  when ("live in a minute or two" on `main`; "once you press Create PR and
+  Merge" otherwise), that the page is public, and — once — that the same URL
+  works on a headset. Then the URL on its own line.
+- Route A, update: "build N is on its way to the link — reload in a minute
+  (the panel shows the build number)". Then the URL on its own line.
+- Route B, first share: the artifact card is the link; say the link is private
+  to them until they use the page's **Share** menu and that viewers need to be
+  signed in to Claude. On an update: "anyone with the link just reloads".
+
+Never explain git, the workflow, the artifact tool, the conversion, or the
+manifest unless asked. The words "commit", "push", "branch" and "repo" don't
+need to appear at all; "saved", "published" and "the link" do the job.
 
 ## When this runs on its own
 
-- **End of `/new-xr-app`**: every new app is created with a link, and the card
+- **End of `/new-xr-app`**: every new app is created with a link, and the link
   is what ends the create turn (no screenshot).
 - **After any edit to `index.html`** (see `xr-app-rules`): preview check, then
   this, so the link never lags the folder. If the source didn't change (build
   not bumped) skip the publish — nothing to update — and say so only if the user
   expected a change.
-- **Inside `/publish-xr-app`**: if `artifact.build` is behind the build just
-  uploaded, refresh the link before rendering the QR, so both routes show the
-  same number.
+- **Inside `/publish-xr-app`**: if the link's build (`pages.build` or
+  `artifact.build`) is behind the build just uploaded, refresh the link before
+  rendering the QR, so both routes show the same number.
 
-## What the link does and doesn't do
+## What the links do and don't do
+
+**Pages link (route A)**
+
+- Public, top-level, permanent while the repo exists. Enter VR works; a QR of
+  the URL opens it on a ClassVR headset. Renaming the repo or the app's slug
+  changes the URL, so don't.
+- Version history is the repo's history. "Go back to build 3" is a git revert
+  of the app folder, which Claude can do when asked.
+- No automatic tester reports; use `/check-headset` for headset sessions.
+
+**Artifact link (route B)**
 
 - Every publish is labelled `build N` in the page's version history, so an
   older build can be looked at from the version picker without touching the
@@ -186,9 +312,8 @@ Never explain the artifact tool, the conversion, or the manifest unless asked.
   After a fix ships, offer to clear old reports: `write_db` `db_op: "delete"`
   per document (or a `batch`), only for builds older than the fix.
 - Reports only arrive from the artifact link. The ClassCloud copy on a headset,
-  a local file, and the link opened outside the viewer have no runtime and
-  write nothing — those sessions still rely on the code on the sign.
-
+  a Pages page, a local file, and the link opened outside the viewer have no
+  runtime and write nothing — those sessions still rely on the code on the sign.
 - Opens in any desktop browser: click the scene once, then the mouse looks;
   Esc or another click stops; W/A/S/D move, Q/E turn. The frame refuses pointer
   lock, so `xr-kit` provides its own "soft look" there (cursor hidden, camera
@@ -201,7 +326,8 @@ Never explain the artifact tool, the conversion, or the manifest unless asked.
   page inside a frame whose permission policy blocks WebXR (`SecurityError`, no
   VR button) and whose sandbox blocks opening the page on its own (`_blank` and
   `_top` both do nothing). Tested in Wolvic on ClassVR, 2026-09-03. The panel
-  says so. Headsets go through `/publish-xr-app`; if someone asks why the link
-  "has no VR button", that is the answer — don't try to fix it in the app.
+  says so. Headsets go through a Pages link or `/publish-xr-app`; if someone
+  asks why the link "has no VR button", that is the answer — don't try to fix
+  it in the app.
 - One artifact per app, owned by whoever first shared it. A second person
-  editing the same app gets their own link (step 5, Ownership).
+  editing the same app gets their own link (B5, Ownership).

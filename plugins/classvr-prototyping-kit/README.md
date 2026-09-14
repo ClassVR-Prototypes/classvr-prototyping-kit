@@ -8,7 +8,7 @@ Four things you can say:
 | You say | What happens |
 |---|---|
 | **"Make a new VR app called Planet Walk"** (`/new-xr-app`) | A folder appears with a working scene — checked green ground, blue sky, a VR rig with controllers, thumbstick movement and snap-turn — and the app opens on screen as a Claude Artifact with its own permanent link. Right-click and drag to look around, left-click presses; WASD moves, Q/E turn. If the name sounds like a game ("Bubble Pop") and you didn't say what it does, you're offered a few concepts — or the empty scene — and the one you pick is built as a first playable version. |
-| **"Share it" / "refresh the link"** (`/share-xr-app`) | The app is rebuilt, checked, and the artifact updated in place. Runs on its own after every edit, so the link is never behind. Share the link from the page's Share menu; anyone with it reloads to see the latest build. |
+| **"Share it" / "refresh the link"** (`/share-xr-app`) | The app is rebuilt, checked, and its link updated. In a GitHub repository (Claude Code) the link is a public **GitHub Pages** URL, which also works for Enter VR on a headset; elsewhere it is a Claude Artifact. Runs on its own after every edit, so the link is never behind, and the URL is put in the chat. |
 | **"Show me"** (`/preview-xr-app`) | The app is loaded in a headless browser and checked for errors. You get a screenshot and a one-line health report. |
 | **"Put it on the headset"** (`/publish-xr-app`) | The app is verified, uploaded to ClassCloud, filed under your organisation's **XR Prototypes** playlist, and you get a QR code. Scan it on the headset. Re-publish as often as you like — the QR never changes. |
 
@@ -23,7 +23,8 @@ on a headset.
 skills/
   new-xr-app/        scaffold a project; bundles A-Frame 1.7.1 and cannon-es
   preview-xr-app/    headless load + error check + screenshot
-  share-xr-app/      build → verify → Claude Artifact on a permanent link
+  share-xr-app/      build → verify → GitHub Pages (in a repo) or Claude Artifact, on a permanent link
+    assets/pages/                    the Pages workflow + site builder the kit installs in a repo
   publish-xr-app/    build → verify → upload → playlist → QR
   check-headset/     after a play on a headset: fetch its log, read the app's diary
   xr-app-rules/      the constraints, applied on every edit
@@ -79,17 +80,22 @@ diagnostics (controller connections, input counts, colour mode, a session
 summary on leaving VR) go to the console tagged `[xr-kit]`, readable in browser
 devtools or on the headset with `adb logcat | grep xr-kit`.
 
-**The app lives on a link, not in a file.** Every app is published as a Claude
-Artifact the moment it is created, and updated in place after every edit. The
-link never changes, so a colleague who has it just reloads; the build number on
-the panel says which version they're looking at. Two routes, one build number:
-the link for desktop browsers and sharing, ClassCloud + QR for headsets.
-Artifacts are private until shared from the page's Share menu, and viewers need
-to be signed in to Claude. An artifact can only be updated by the person who
-created it — a second person editing the same app is offered their own link.
+**The app lives on a link, not in a file.** Every app is put on a link the
+moment it is created, and the link is updated after every edit. It never
+changes, so a colleague who has it just reloads; the build number on the panel
+says which version they're looking at. Which link depends on where the app
+lives. In a **GitHub repository** — how Claude Code works — it is a public
+GitHub Pages URL (`https://<owner>.github.io/<repo>/<slug>/`), a plain web page
+that opens on a desktop *and* enters VR on a headset, so a QR of it is all a
+headset needs; the repo's history is the app's history. In a **plain folder**
+(Cowork) it is a Claude Artifact: private until shared from the page's Share
+menu, viewers signed in to Claude, updatable only by whoever created it, and
+unable to enter VR — headsets then go through ClassCloud + QR. Both routes share
+one build number with the ClassCloud publish.
 
 **One thing on screen per turn, and it's the thing you need next.** Create or
-edit an app and the turn ends on the artifact card — the app itself. Ask for a
+edit an app and the turn ends on the link — the Pages URL on its own line, or
+the artifact card. Ask for a
 preview and you get the screenshot. Publish — on its own, or in the same prompt
 as "make a new app" — and you see the QR code, rendered last so nothing covers
 the code you are about to scan. Project files are attached as files, not
@@ -171,7 +177,11 @@ rotation kept, give and cap exact) and press a pretend trigger on the desktop.
   few minutes and the headset must be on its home screen; it is not live.
 - The artifact link cannot enter VR on a headset: the artifact viewer frames
   the page with a permission policy that blocks WebXR and a sandbox that blocks
-  opening it on its own. The panel says so. Headsets go through ClassCloud.
+  opening it on its own. The panel says so. Headsets go through a GitHub Pages
+  link or ClassCloud. A Pages link, by contrast, is public, needs the repo's
+  one-time *Settings → Pages → Source: GitHub Actions* setting, goes live only
+  from `main` (a change on a branch waits for its PR to be merged), and sits
+  behind a 10-minute cache (`?b=<build>` fetches fresh).
   The same frame refuses pointer lock, so the kit supplies its own click-once
   mouse look there (Esc stops it). The camera pauses while the cursor is off
   the page; fullscreen avoids that.

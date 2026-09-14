@@ -166,9 +166,10 @@ leave it — the code hasn't changed and the user may have printed it.
     python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/manifest.py \
         --project "<project>" --set classcloud.lastUrl="<url>" --touch-published
 
-**Keep the link in step.** If the manifest's `artifact.build` is behind the
-build just uploaded (or `artifact.url` is empty), run `/share-xr-app` from its
-step 4 — convert the verified build and update the artifact — before anything
+**Keep the link in step.** If the manifest's link build (`pages.build` when the
+app is in a GitHub repo, otherwise `artifact.build`) is behind the build just
+uploaded, or there is no link yet, run `/share-xr-app` from its route step (A4
+or B4) — push to Pages, or convert and update the artifact — before anything
 is rendered. Headset and link then show the same build number.
 
 Write back to the user's folder: `xr-project.json`, the `dist/` build, `qr.png`

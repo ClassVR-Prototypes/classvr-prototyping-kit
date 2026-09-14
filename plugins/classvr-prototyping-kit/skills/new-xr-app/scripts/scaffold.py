@@ -112,6 +112,12 @@ def main():
             'owner': None,
             'build': None,
             'lastShared': None
+        },
+        'pages': {
+            'url': None,
+            'repo': None,
+            'build': None,
+            'lastShared': None
         }
     }
     open(os.path.join(dest, 'xr-project.json'), 'w', encoding='utf-8').write(

@@ -173,25 +173,46 @@ from the start position. If they aren't, move them, don't ship it.
 
 ### 7. Put it on a link
 
-Deliver the project files to the user's folder first (`SendUserFile` with
-`display: "attach"`, then `device_commit_files`), then run `/share-xr-app` from
-its step 4 onward — the build and preview check are already done, so convert the
-verified build with `artifact.py` and publish it. This creates the app's
-artifact and records its URL in `xr-project.json`, which must then be written
-back to the folder again (it changed). Every app leaves this skill with a link.
+Run `/share-xr-app` from its step 1 (route choice) — the build and preview
+check are already done, so skip its steps 2–3. Where the app lives decides the
+kind of link:
 
-### 8. Tell the user, briefly
+- **Inside a GitHub repository** (Claude Code, a cloned repo): **route A,
+  GitHub Pages.** Commit the new folder, push, and the app gets a public URL
+  like `https://<owner>.github.io/<repo>/<slug>/`. Do **not** make an artifact
+  as well — one link per app, and the Pages one is the one that also works on a
+  headset. If the repo has never published before, the share skill adds the
+  workflow and tells the user the one-time Pages setting.
+- **A plain folder** (Cowork with a connected folder, no repo): **route B,
+  Claude Artifact.** Deliver the project files to the user's folder first
+  (`SendUserFile` with `display: "attach"`, then `device_commit_files`), then
+  convert the verified build with `artifact.py` and publish it; write
+  `xr-project.json` back again afterwards (it changed).
 
-One or two sentences: the folder name, that the card above is the app (click to
-look, W/A/S/D to move, Q/E to turn; reload it after any change), and — if a
-concept was built — what the game does in one line and how to play it. Then
-that `/publish-xr-app` puts it on the headset. Do not explain libraries,
-manifests, artifacts, or build numbers unless asked.
+Every app leaves this skill with a link recorded in `xr-project.json`.
 
-**What appears on screen.** The artifact card is the last thing the turn
-produces. Do **not** render `preview.png` — the app itself is on screen, a
-screenshot of it would only push the card away. Project files are attached, not
-rendered.
+### 8. Tell the user, briefly — and give them the link
+
+One or two sentences: the folder name; if a concept was built, what the game
+does in one line and how to play it (click to look, W/A/S/D to move, Q/E to
+turn; on a headset, **Enter VR**); then how to get it on a headset — on route A
+"open the same link on the headset, or ask me for a QR code", on route B
+"`/publish-xr-app` puts it on the headset". Do not explain libraries,
+manifests, artifacts, git, or build numbers unless asked.
+
+**What appears on screen.**
+
+- Route A: **the URL is the last line of the reply, on its own line**, so the
+  user can click it and open the app straight away. Say when it will work: "live
+  in a minute or two" if the change went to `main`; "once you press Create PR
+  and Merge" if it went to a branch (Claude Code on the web always does). A
+  brand-new repo also needs the one-time Pages setting — say so if the share
+  skill just added the workflow.
+- Route B: the artifact card is the last thing the turn produces; don't paste
+  the URL as well.
+
+Do **not** render `preview.png` in either case — a screenshot would only push
+the link away. Project files are attached, not rendered.
 
 If the request asked to create **and** publish ("make X and put it on the
 headset"), continue straight into `/publish-xr-app` without stopping to report

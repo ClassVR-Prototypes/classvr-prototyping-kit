@@ -62,10 +62,11 @@ them something changed.
 
 ## Status
 
-Version 0.15.2, September 2026. Built and tested against the ClassVR Xcelerate
+Version 0.16.0, September 2026. Built and tested against the ClassVR Xcelerate
 headset (Wolvic browser). Prototypes made with the kit are ordinary
-single-file HTML pages and can be hosted anywhere that serves HTTPS —
-ClassCloud, GitHub Pages, or a plain web server. See the plugin README for the
+HTML pages. In a GitHub repository the kit publishes them to GitHub Pages on
+every change (the `share-xr-app` skill installs the workflow); outside a repo it
+uses a Claude Artifact for the desktop link and ClassCloud for headsets. See the plugin README for the
 constraints that keep an app working on the headset.
 
 Maintained by Avantis — Project Ptah.

@@ -414,13 +414,17 @@ Every edit to `index.html` ends the same way, in this order:
    non-technical user cannot diagnose from a blank headset. A failing check
    means the edit isn't finished; read `checks` and `diary` in
    `preview.json` and fix the first problem first.
-2. **Refresh the link** (`/share-xr-app`). The app's artifact is updated in
-   place so the user — and anyone they've shared the link with — sees the
-   change by reloading. The build number bumps, and it's what confirms they're
-   looking at the new version. If the manifest has no `artifact.url` yet
-   (an app made before links existed), this creates one.
-3. Write `index.html` and `xr-project.json` back to the folder.
+2. **Refresh the link** (`/share-xr-app`). In a GitHub repository that means
+   commit and push, and the Pages URL shows the change once it reaches `main`;
+   elsewhere the app's artifact is updated in place. Either way the user — and
+   anyone they've shared the link with — sees the change by reloading. The
+   build number bumps, and it's what confirms they're looking at the new
+   version. If the manifest has no link yet (an app made before links
+   existed), this creates one.
+3. Write `index.html` and `xr-project.json` back to the folder (in a repo, the
+   commit is the write-back).
 
-The artifact card is the last thing on screen in an edit turn. One sentence
-about what changed, then "reload the link to see it". Never render
-`preview.png` in an edit turn.
+The link is the last thing on screen in an edit turn: the Pages URL on its own
+line, or the artifact card. One sentence about what changed, then "reload the
+link to see it" (on a branch: "once it's merged"). Never render `preview.png`
+in an edit turn.
