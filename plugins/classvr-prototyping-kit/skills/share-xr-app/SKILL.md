@@ -92,8 +92,8 @@ repo has never been set up for Pages; do it now, once, from the kit's templates:
 - copy `${CLAUDE_PLUGIN_ROOT}/skills/share-xr-app/assets/pages/pages.yml`
   to `.github/workflows/pages.yml`
 - copy `${CLAUDE_PLUGIN_ROOT}/skills/share-xr-app/assets/pages/auto-publish.yml`
-  to `.github/workflows/auto-publish.yml` (publishes a `[publish]` commit from
-  a `claude/…` branch without a PR — see A5)
+  to `.github/workflows/auto-publish.yml` (safety net: publishes a `[publish]`
+  commit if the API route in A5 is ever refused)
 - copy `${CLAUDE_PLUGIN_ROOT}/skills/share-xr-app/assets/pages/build_pages.py`
   to `.github/scripts/build_pages.py`
 - append the lines in `${CLAUDE_PLUGIN_ROOT}/skills/share-xr-app/assets/pages/gitignore-lines`
@@ -126,63 +126,69 @@ request produced several distinct changes, make several commits; the history
 is something the user may read later to learn how work is organised, so make
 it read well. Never one giant "update" commit; never commit half a change.
 
-**Publishing is a separate decision from saving.** When
-`.github/workflows/auto-publish.yml` exists in the repo, a push publishes
-nothing on its own; only a commit whose message **ends with `[publish]`**
-does — the workflow merges the branch into `main` (keeping every commit) and
-starts the deploy. So:
+**Publishing is a separate decision from saving.** Saving is commits on the
+current branch, pushed. Publishing is getting them onto `main`, which is what
+the Pages workflow deploys. On `main` itself, a push is a publish. On a
+`claude/…` branch (Claude Code on the web always works on one), publish like
+this, in order:
 
-- By default, each request is one piece of finished work: make the commits,
-  and put `[publish]` at the end of the **last** one ("Bump Planet Walk to
-  build 4 [publish]"). Then push.
-- If the user says they want to make several changes before anything goes
-  live ("don't publish yet", "I'll tell you when"), leave the marker off and
-  say the work is saved but not live. When they say "publish" / "put it live"
-  / "update the link", make a small commit with the marker (bump the build if
-  the source changed) and push.
-- Never put `[publish]` on a commit whose build failed the preview.
+**Primary — open and merge a pull request yourself.** The session's GitHub
+credentials work through the proxy (`GH_TOKEN` reads `proxy-injected`; the
+proxy signs the request). Tested 15 Sep 2026: create → 201, merge → 200.
 
-Without `auto-publish.yml`, the branch rules below apply instead.
+    curl -s -o /tmp/pr.json -w '%{http_code}' -X POST \
+      -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+      -H "Content-Type: application/json" \
+      https://api.github.com/repos/<Owner>/<repo>/pulls \
+      -d '{"title":"<what changed, in the user's words>","head":"<branch>","base":"main","body":"<description>"}'
+    # read .number from /tmp/pr.json, then:
+    curl -s -w '%{http_code}' -X PUT \
+      -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+      -H "Content-Type: application/json" \
+      https://api.github.com/repos/<Owner>/<repo>/pulls/<number>/merge \
+      -d '{"merge_method":"merge","commit_title":"Publish: <title>"}'
 
-Work out the URL from the remote:
+(`gh pr create` / `gh pr merge` do the same when `gh` is installed.) The
+`Content-Type` header is required — without it the proxy answers 415. Use
+`"merge_method":"merge"` so the individual commits stay visible on `main`.
+Write the PR body the way a good colleague would: what changed and why, how
+to try it (the Pages URL), and the build number. One PR per finished piece of
+work; if a branch already has an open PR from this session, merging it
+publishes everything pushed so far — don't open a second.
+
+**Fallback — the `[publish]` marker.** If either call returns 403 (proxy
+policy can change) and `.github/workflows/auto-publish.yml` exists in the
+repo, make a small commit whose message ends with `[publish]` and push: the
+workflow merges the branch into `main` (keeping every commit) and starts the
+deploy. Use the marker **only** in this case — never alongside a merged PR,
+or the workflow would try to publish twice.
+
+**Last resort — the user's two clicks.** Neither route available: say
+plainly "Press **Create PR**, then **Merge** on GitHub, and the link goes
+live a minute or two later" — two clicks, no other steps.
+
+**When to publish.** By default every request is one finished piece of work:
+build, verify, commit, then publish, and say "live in a couple of minutes".
+If the user says they want several changes before anything goes live ("don't
+publish yet", "I'll tell you when"), save only — push the commits, say the
+work is saved but not live — and publish when they say "publish" / "put it
+live" / "update the link". Never publish a build that failed the preview.
+
+Then the URL. Work it out from the remote:
 
     https://github.com/<Owner>/<repo>.git  →  https://<owner-lowercase>.github.io/<repo>/<slug>/
 
 (If the repo is itself named `<owner>.github.io`, drop the `/<repo>` part.)
 
-Record it:
+Record it before the publishing commit so the repo's copy matches:
 
     python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/manifest.py --project "<project>" \
         --set pages.url="<url>" --set pages.repo="<Owner>/<repo>" --set pages.build=<N> --touch-pages
 
-If the manifest changed after the commit (it did: `pages.*`), amend or add a
-second small commit so the repo's copy matches.
-
-**Which branch matters.** The Pages workflow publishes `main`.
-
-- On `main`: the site rebuilds on its own; the new build is live in about
-  1–2 minutes.
-- On a `claude/…` branch **with `auto-publish.yml`** in the repo: a `[publish]`
-  commit is live 2–3 minutes after the push (merge, then deploy). Say "live in
-  a couple of minutes". If the user later reports it never appeared, the
-  Actions tab shows why — usually a merge conflict; bring the branch up to
-  date with `main` and publish again.
-- On a `claude/…` branch **without** it: the change is pushed but **not live
-  until it is merged**. Try to do that yourself first, through the GitHub API
-  the session already has credentials for (`GH_TOKEN` reads `proxy-injected`
-  and the proxy signs the request):
-
-      curl -s -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-        https://api.github.com/repos/<Owner>/<repo>/pulls \
-        -d '{"title":"<summary>","head":"<branch>","base":"main","body":"Published by the ClassVR Prototyping Kit."}'
-      curl -s -X PUT  -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-        https://api.github.com/repos/<Owner>/<repo>/pulls/<number>/merge -d '{"merge_method":"merge"}'
-
-  (`gh pr create` / `gh pr merge` if `gh` is installed.) If either returns 403
-  from the proxy, stop trying and say plainly: "Press **Create PR**, then
-  **Merge** on GitHub, and the link goes live a minute or two later" — two
-  clicks, no other steps. Suggest adding `auto-publish.yml` (step A4) so it
-  never comes up again.
+**Timing.** Deploy takes 1–2 minutes after the merge; say "a couple of
+minutes". If the user reports it never appeared, the repo's Actions tab shows
+why — most often the one-time Pages setting (A4) or a merge conflict, which
+means: bring the branch up to date with `main` and publish again.
 
 **Caching.** Pages sits behind a CDN with a 10-minute cache. Someone who loaded
 the page recently may still see the old build after a reload; the build number
@@ -298,7 +304,7 @@ Then one or two sentences, and **the link is the last line**:
 
 - Route A, first share: the app name, "build N", where it will appear and
   when ("live in a couple of minutes"; or "once you press Create PR and Merge"
-  only when the repo has no auto-publish and the API route failed), that the
+  only when both hands-free routes in A5 failed), that the
   page is public, and — once — that the same URL works on a headset. Then the
   URL on its own line.
 - Route A, update: "build N is on its way to the link — reload in a couple of

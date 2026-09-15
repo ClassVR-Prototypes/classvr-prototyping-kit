@@ -1,9 +1,9 @@
-# Publishes a finished piece of work without anyone pressing "Create PR" or
-# "Merge".
+# Safety net: publishes a finished piece of work when Claude cannot open and
+# merge the pull request itself (normally it can, through GitHub's API).
 #
-# Claude Code on the web can only push to its own `claude/…` branch. Claude
-# saves work there as ordinary commits; when a feature is ready it makes a
-# commit whose message ends with `[publish]`. This job sees that marker,
+# Claude Code on the web can only push to its own `claude/…` branch. If the
+# API route is refused, Claude makes a commit whose message ends with
+# `[publish]`. This job sees that marker,
 # merges the branch into `main` — keeping every commit, so the history stays
 # readable — and starts the Pages deploy. The link updates a minute or two
 # later. Pushes without the marker are just saved work and publish nothing.

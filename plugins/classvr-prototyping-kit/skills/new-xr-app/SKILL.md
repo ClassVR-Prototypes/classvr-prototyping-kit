@@ -204,9 +204,9 @@ manifests, artifacts, git, or build numbers unless asked.
 
 - Route A: **the URL is the last line of the reply, on its own line**, so the
   user can click it and open the app straight away. Say when it will work:
-  "live in a couple of minutes" (the repo's auto-publish takes care of the
-  rest); only if the repo has no auto-publish and the API route failed, "once
-  you press Create PR and Merge". A brand-new repo also needs the one-time
+  "live in a couple of minutes" (the share skill opened and merged the pull
+  request itself); only if both hands-free routes failed, "once you press
+  Create PR and Merge". A brand-new repo also needs the one-time
   Pages setting — say so if the share skill just added the workflows.
 - Route B: the artifact card is the last thing the turn produces; don't paste
   the URL as well.
