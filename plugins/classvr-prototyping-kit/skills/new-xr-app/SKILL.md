@@ -203,11 +203,11 @@ manifests, artifacts, git, or build numbers unless asked.
 **What appears on screen.**
 
 - Route A: **the URL is the last line of the reply, on its own line**, so the
-  user can click it and open the app straight away. Say when it will work: "live
-  in a minute or two" if the change went to `main`; "once you press Create PR
-  and Merge" if it went to a branch (Claude Code on the web always does). A
-  brand-new repo also needs the one-time Pages setting — say so if the share
-  skill just added the workflow.
+  user can click it and open the app straight away. Say when it will work:
+  "live in a couple of minutes" (the repo's auto-publish takes care of the
+  rest); only if the repo has no auto-publish and the API route failed, "once
+  you press Create PR and Merge". A brand-new repo also needs the one-time
+  Pages setting — say so if the share skill just added the workflows.
 - Route B: the artifact card is the last thing the turn produces; don't paste
   the URL as well.
 

@@ -298,6 +298,17 @@ two seconds; don't test the kit itself (movement, colour, snap turn) — that's
 covered. A check that fails because the *check* is wrong gets fixed, not
 deleted; a check that fails because the app is wrong means the edit isn't done.
 
+**Check durable evidence, not things that vanish.** A dart, a thrown ball, a
+particle burst or a popped bubble may be gone before `t.wait()` returns, so
+"count the darts after 300 ms" fails even when the app is right. Instead have
+the app record the moment it happens and check *that*: bump a counter on the
+app (`window.APP.dartsFired++`) or leave a line in the diary
+(`window.KIT.note('event', 'dart fired')`) where the dart is created, then
+`t.expect(window.APP.dartsFired === before + 1, …)`. Counting scene objects is
+fine for things that stay (a table, a sign, a new wall of bubbles); read the
+count *immediately* after the action if the object is short-lived. Order
+checks so an earlier one doesn't consume what a later one looks for.
+
 ## Debugging without a console
 
 **Never ask the user to open a browser console, developer tools, or `adb`.**
@@ -415,7 +426,9 @@ Every edit to `index.html` ends the same way, in this order:
    means the edit isn't finished; read `checks` and `diary` in
    `preview.json` and fix the first problem first.
 2. **Refresh the link** (`/share-xr-app`). In a GitHub repository that means
-   commit and push, and the Pages URL shows the change once it reaches `main`;
+   well-named commits (one per logical change), the last one marked
+   `[publish]` unless the user asked to hold, then push; the Pages URL shows
+   the change a couple of minutes later;
    elsewhere the app's artifact is updated in place. Either way the user — and
    anyone they've shared the link with — sees the change by reloading. The
    build number bumps, and it's what confirms they're looking at the new

@@ -11,7 +11,7 @@ description: >
   app, so the link is never behind the folder, and it always ends by putting the
   link in the chat.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # Share XR app
@@ -91,6 +91,9 @@ repo has never been set up for Pages; do it now, once, from the kit's templates:
 
 - copy `${CLAUDE_PLUGIN_ROOT}/skills/share-xr-app/assets/pages/pages.yml`
   to `.github/workflows/pages.yml`
+- copy `${CLAUDE_PLUGIN_ROOT}/skills/share-xr-app/assets/pages/auto-publish.yml`
+  to `.github/workflows/auto-publish.yml` (publishes a `[publish]` commit from
+  a `claude/…` branch without a PR — see A5)
 - copy `${CLAUDE_PLUGIN_ROOT}/skills/share-xr-app/assets/pages/build_pages.py`
   to `.github/scripts/build_pages.py`
 - append the lines in `${CLAUDE_PLUGIN_ROOT}/skills/share-xr-app/assets/pages/gitignore-lines`
@@ -110,13 +113,36 @@ The site builder serves every folder that has an `xr-project.json` at
 an index page listing them. Apps are ordinary folders at the repo root; nothing
 else about the repo layout matters.
 
-### A5. Commit and push
+### A5. Commit, push, publish
 
 Stage only what the site needs: the app folder's `index.html`,
 `xr-project.json` and any local libraries it references (`aframe.min.js`,
-`cannon.iife.js`). Never commit `dist/` or `.preview/`. Commit with a message in
-the user's words ("Planet Walk: add the red table — build 4") and push to the
-current branch.
+`cannon.iife.js`). Never commit `dist/` or `.preview/`.
+
+**Commit the way a careful developer would.** One commit per logical change,
+in the user's words, present tense, specific: "Add a wooden table left of the
+start", "Add a self-check for the table", "Bump Planet Walk to build 4". If a
+request produced several distinct changes, make several commits; the history
+is something the user may read later to learn how work is organised, so make
+it read well. Never one giant "update" commit; never commit half a change.
+
+**Publishing is a separate decision from saving.** When
+`.github/workflows/auto-publish.yml` exists in the repo, a push publishes
+nothing on its own; only a commit whose message **ends with `[publish]`**
+does — the workflow merges the branch into `main` (keeping every commit) and
+starts the deploy. So:
+
+- By default, each request is one piece of finished work: make the commits,
+  and put `[publish]` at the end of the **last** one ("Bump Planet Walk to
+  build 4 [publish]"). Then push.
+- If the user says they want to make several changes before anything goes
+  live ("don't publish yet", "I'll tell you when"), leave the marker off and
+  say the work is saved but not live. When they say "publish" / "put it live"
+  / "update the link", make a small commit with the marker (bump the build if
+  the source changed) and push.
+- Never put `[publish]` on a commit whose build failed the preview.
+
+Without `auto-publish.yml`, the branch rules below apply instead.
 
 Work out the URL from the remote:
 
@@ -132,16 +158,31 @@ Record it:
 If the manifest changed after the commit (it did: `pages.*`), amend or add a
 second small commit so the repo's copy matches.
 
-**Which branch matters.** The workflow publishes `main`.
+**Which branch matters.** The Pages workflow publishes `main`.
 
 - On `main`: the site rebuilds on its own; the new build is live in about
   1–2 minutes.
-- On any other branch (Claude Code on the web always works on a `claude/…`
-  branch): the change is pushed but **not live until it is merged**. If a
-  GitHub CLI or API is reachable in the session and the user asked for the app
-  to be live, open the pull request and merge it. Otherwise say plainly: "Press
-  **Create PR**, then **Merge** on GitHub, and the link goes live a minute or
-  two later" — two clicks, no other steps.
+- On a `claude/…` branch **with `auto-publish.yml`** in the repo: a `[publish]`
+  commit is live 2–3 minutes after the push (merge, then deploy). Say "live in
+  a couple of minutes". If the user later reports it never appeared, the
+  Actions tab shows why — usually a merge conflict; bring the branch up to
+  date with `main` and publish again.
+- On a `claude/…` branch **without** it: the change is pushed but **not live
+  until it is merged**. Try to do that yourself first, through the GitHub API
+  the session already has credentials for (`GH_TOKEN` reads `proxy-injected`
+  and the proxy signs the request):
+
+      curl -s -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+        https://api.github.com/repos/<Owner>/<repo>/pulls \
+        -d '{"title":"<summary>","head":"<branch>","base":"main","body":"Published by the ClassVR Prototyping Kit."}'
+      curl -s -X PUT  -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+        https://api.github.com/repos/<Owner>/<repo>/pulls/<number>/merge -d '{"merge_method":"merge"}'
+
+  (`gh pr create` / `gh pr merge` if `gh` is installed.) If either returns 403
+  from the proxy, stop trying and say plainly: "Press **Create PR**, then
+  **Merge** on GitHub, and the link goes live a minute or two later" — two
+  clicks, no other steps. Suggest adding `auto-publish.yml` (step A4) so it
+  never comes up again.
 
 **Caching.** Pages sits behind a CDN with a 10-minute cache. Someone who loaded
 the page recently may still see the old build after a reload; the build number
@@ -256,18 +297,23 @@ a share; only the headset publish keeps a copy of what it uploaded.
 Then one or two sentences, and **the link is the last line**:
 
 - Route A, first share: the app name, "build N", where it will appear and
-  when ("live in a minute or two" on `main`; "once you press Create PR and
-  Merge" otherwise), that the page is public, and — once — that the same URL
-  works on a headset. Then the URL on its own line.
-- Route A, update: "build N is on its way to the link — reload in a minute
-  (the panel shows the build number)". Then the URL on its own line.
+  when ("live in a couple of minutes"; or "once you press Create PR and Merge"
+  only when the repo has no auto-publish and the API route failed), that the
+  page is public, and — once — that the same URL works on a headset. Then the
+  URL on its own line.
+- Route A, update: "build N is on its way to the link — reload in a couple of
+  minutes (the panel shows the build number)". Then the URL on its own line.
+- Route A, saved but not published (user asked to hold): "saved, not live yet
+  — say 'publish' when you're ready". No URL needed.
 - Route B, first share: the artifact card is the link; say the link is private
   to them until they use the page's **Share** menu and that viewers need to be
   signed in to Claude. On an update: "anyone with the link just reloads".
 
 Never explain git, the workflow, the artifact tool, the conversion, or the
 manifest unless asked. The words "commit", "push", "branch" and "repo" don't
-need to appear at all; "saved", "published" and "the link" do the job.
+need to appear at all; "saved", "published" and "the link" do the job. If the
+user *asks* how the history is organised, or wants to learn, then explain
+gladly — the commits were written to be read.
 
 ## When this runs on its own
 

@@ -26,7 +26,7 @@ import sys
 KEEP_SUFFIXES = ('.html', '.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.json')
 
 # Never descend into these looking for apps.
-SKIP_DIRS = {'.git', '.github', '.claude', 'node_modules', '_site', 'dist', '.preview'}
+SKIP_DIRS = {'.git', '.github', '.claude', '.agents', 'kit', 'node_modules', '_site', 'dist', '.preview'}
 
 
 def find_apps(root):

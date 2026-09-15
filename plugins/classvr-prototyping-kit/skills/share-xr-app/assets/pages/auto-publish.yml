@@ -1,0 +1,62 @@
+# Publishes a finished piece of work without anyone pressing "Create PR" or
+# "Merge".
+#
+# Claude Code on the web can only push to its own `claude/…` branch. Claude
+# saves work there as ordinary commits; when a feature is ready it makes a
+# commit whose message ends with `[publish]`. This job sees that marker,
+# merges the branch into `main` — keeping every commit, so the history stays
+# readable — and starts the Pages deploy. The link updates a minute or two
+# later. Pushes without the marker are just saved work and publish nothing.
+#
+# Every published build has already passed the kit's preview check. If you
+# want a human review step instead, delete this file: the normal
+# "Create PR → Merge" flow then applies.
+#
+# If a merge conflicts (rare — apps live in separate folders), the run fails
+# with a clear message and nothing is published; ask Claude to bring its
+# branch up to date with main and publish again.
+name: Publish finished work
+
+on:
+  push:
+    branches: ['claude/**']
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: auto-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Only when the newest commit on the branch carries the marker.
+    if: contains(github.event.head_commit.message, '[publish]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Merge the branch into main
+        env:
+          BRANCH: ${{ github.ref_name }}
+          TITLE: ${{ github.event.head_commit.message }}
+        run: |
+          git config user.name  "kit-publisher"
+          git config user.email "kit-publisher@users.noreply.github.com"
+          git fetch origin "$BRANCH"
+          summary=$(printf '%s' "$TITLE" | head -n1 | sed 's/ *\[publish\] *$//')
+          if git merge --no-ff --no-edit "origin/$BRANCH" -m "Publish: $summary"; then
+            git push origin main
+          else
+            echo "::error::Could not merge '$BRANCH' into main automatically (the two have conflicting changes). Ask Claude to bring the branch up to date with main and publish again."
+            exit 1
+          fi
+      - name: Start the Pages deploy
+        # A push made by a workflow does not trigger other workflows (GitHub's
+        # loop guard), so start the deploy explicitly.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main

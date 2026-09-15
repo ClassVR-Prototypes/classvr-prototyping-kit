@@ -19,7 +19,7 @@ and no file:// quirks apply), loads it, waits for A-Frame to settle, and checks:
 Writes <out>/preview.png and <out>/preview.json. Prints the JSON.
 Exit 0 = pass, 1 = fail, 3 = preview could not run (Playwright unavailable).
 """
-import argparse, json, os, sys, threading, socket, http.server, functools
+import argparse, json, os, sys, threading, socket, http.server, functools, glob, shutil, subprocess
 
 def free_port():
     s = socket.socket(); s.bind(('127.0.0.1', 0)); p = s.getsockname()[1]; s.close(); return p
@@ -50,9 +50,57 @@ def main():
                               'reason': 'Playwright is not installed and could not be installed'}))
             return 3
 
+    def find_chromium():
+        """A Chromium binary already on this machine, when Playwright's own
+        expected revision is missing (cloud sandboxes ship one revision of the
+        browser and a different version of the playwright package)."""
+        cands = []
+        for env in ('PLAYWRIGHT_CHROMIUM_EXECUTABLE', 'CHROME_BIN', 'CHROMIUM_BIN'):
+            if os.environ.get(env): cands.append(os.environ[env])
+        roots = [os.environ.get('PLAYWRIGHT_BROWSERS_PATH', ''), '/opt/pw-browsers',
+                 os.path.expanduser('~/.cache/ms-playwright')]
+        for r in roots:
+            if not r: continue
+            cands += sorted(glob.glob(os.path.join(r, 'chromium-*', 'chrome-linux', 'chrome')), reverse=True)
+            cands += sorted(glob.glob(os.path.join(r, 'chromium_headless_shell-*', '*', 'headless_shell')), reverse=True)
+            cands += sorted(glob.glob(os.path.join(r, 'chromium_headless_shell-*', '*', 'chrome-headless-shell')), reverse=True)
+        for name in ('chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable', 'chrome'):
+            w = shutil.which(name)
+            if w: cands.append(w)
+        for c in cands:
+            if c and os.path.isfile(c) and os.access(c, os.X_OK):
+                return c
+        return None
+
+    def launch(p):
+        flags = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']
+        try:
+            return p.chromium.launch(args=flags), None
+        except Exception as e:
+            first = str(e)
+        exe = find_chromium()
+        if exe:
+            try:
+                return p.chromium.launch(executable_path=exe, args=flags), None
+            except Exception as e:
+                first += ' | with ' + exe + ': ' + str(e)
+        # last resort: let Playwright fetch its own browser (needs network to its CDN)
+        try:
+            subprocess.run([sys.executable, '-m', 'playwright', 'install', 'chromium'],
+                           timeout=240, capture_output=True)
+            return p.chromium.launch(args=flags), None
+        except Exception as e:
+            return None, (first + ' | install: ' + str(e))[:400]
+
     port = free_port()
     class Quiet(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *args, **kw): pass
+        def do_GET(self):
+            # Full Chromium asks for a favicon the app never ships; a 404 there
+            # would show up as a console error and fail an otherwise good app.
+            if self.path.split('?')[0] == '/favicon.ico':
+                self.send_response(204); self.end_headers(); return
+            return super().do_GET()
     handler = functools.partial(Quiet, directory=folder)
     srv = http.server.ThreadingHTTPServer(('127.0.0.1', port), handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -61,11 +109,11 @@ def main():
     report, checks, diary = {}, None, None
     try:
         with sync_playwright() as p:
-            try:
-                browser = p.chromium.launch(args=['--use-gl=angle', '--use-angle=swiftshader',
-                                                  '--enable-unsafe-swiftshader'])
-            except Exception as e:
-                print(json.dumps({'ok': None, 'status': 'unavailable', 'reason': 'Chromium failed to launch: ' + str(e)[:200]}))
+            browser, why = launch(p)
+            if browser is None:
+                print(json.dumps({'ok': None, 'status': 'unavailable',
+                                  'reason': 'no usable Chromium: ' + why,
+                                  'hint': 'run "python3 -m playwright install chromium" once, or set PLAYWRIGHT_CHROMIUM_EXECUTABLE to an existing browser binary'}))
                 return 3
             pg = browser.new_page(viewport={'width': a.width, 'height': a.height})
             pg.on('console', lambda m: console_errors.append(m.text) if m.type == 'error' else None)

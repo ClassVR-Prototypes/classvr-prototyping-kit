@@ -49,6 +49,14 @@ loading.
    Exit codes: `0` pass, `1` fail, `3` the check could not run at all (no
    headless browser available). Treat `3` as "unverified", not as a failure.
 
+   The script finds a browser on its own: Playwright's own Chromium if the
+   revision matches, otherwise any Chromium already on the machine
+   (`PLAYWRIGHT_BROWSERS_PATH`, `/opt/pw-browsers`, `PATH`), and as a last
+   resort `playwright install chromium`. **Don't hand-build symlinks or shims
+   to make a browser revision "match"** — if it exits `3`, read its `reason`
+   and `hint`; if a browser exists at a path the script didn't try, set
+   `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to it and run again.
+
 4. **Report in plain language.** Send `preview.png` with `display: "render"` so it
    opens in the side panel — but only when previewing is the point of the turn.
    If this check is running inside `/publish-xr-app`, send nothing: the QR code

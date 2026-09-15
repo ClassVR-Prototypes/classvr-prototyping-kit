@@ -20,6 +20,12 @@ what each skill does and what a person says to trigger it.
 
 ## Use it
 
+**Easiest: start from the template.** Press *Use this template* on
+[ClassVR-Prototypes/xr-prototype-template](https://github.com/ClassVR-Prototypes/xr-prototype-template).
+The kit is bundled in the copy (`kit/`, a git submodule), Claude Code loads it
+from there, GitHub Pages publishing is pre-wired, and `AGENTS.md` tells any
+other AI where the skills are. Its README has the two-minute setup.
+
 **Claude Code on the web / desktop / terminal — one repo, everyone gets the kit.**
 Copy `examples/prototype-repo-settings.json` to `.claude/settings.json` in your
 prototypes repository. Anyone who opens that repo in Claude Code and trusts the
@@ -62,7 +68,7 @@ them something changed.
 
 ## Status
 
-Version 0.16.0, September 2026. Built and tested against the ClassVR Xcelerate
+Version 0.17.0, September 2026. Built and tested against the ClassVR Xcelerate
 headset (Wolvic browser). Prototypes made with the kit are ordinary
 HTML pages. In a GitHub repository the kit publishes them to GitHub Pages on
 every change (the `share-xr-app` skill installs the workflow); outside a repo it
