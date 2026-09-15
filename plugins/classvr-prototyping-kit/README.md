@@ -32,7 +32,7 @@ skills/
 ```
 
 Each skill carries the scripts it needs (`scaffold.py`, `build.py`,
-`preview.py`, `artifact.py`, `upload.py`, `make_qr.py`, `manifest.py`,
+`preview.py`, `artifact.py`, `publish_pr.py`, `upload.py`, `make_qr.py`, `manifest.py`,
 `headset_diary.py`). Claude
 runs them; you never see them. Every project has an `xr-project.json` manifest
 recording its build number, its artifact URL and its ClassCloud ids, which is

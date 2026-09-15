@@ -426,9 +426,11 @@ Every edit to `index.html` ends the same way, in this order:
    means the edit isn't finished; read `checks` and `diary` in
    `preview.json` and fix the first problem first.
 2. **Refresh the link** (`/share-xr-app`). In a GitHub repository that means
-   well-named commits (one per logical change), push, and — unless the user
-   asked to hold — a pull request opened and merged by the skill; the Pages
-   URL shows the change a couple of minutes later;
+   well-named commits (one per logical change) and a push, **then publishing
+   with the kit's `publish_pr.py`** — the pull request is opened and merged
+   by the skill, without asking, unless the user said to hold; the Pages URL
+   shows the change a couple of minutes later. A turn that ends "saved on
+   your branch, press Create PR…" has skipped this step;
    elsewhere the app's artifact is updated in place. Either way the user — and
    anyone they've shared the link with — sees the change by reloading. The
    build number bumps, and it's what confirms they're looking at the new

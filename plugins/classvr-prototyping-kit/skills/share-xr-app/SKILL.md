@@ -11,7 +11,7 @@ description: >
   app, so the link is never behind the folder, and it always ends by putting the
   link in the chat.
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
 ---
 
 # Share XR app
@@ -119,53 +119,56 @@ Stage only what the site needs: the app folder's `index.html`,
 `xr-project.json` and any local libraries it references (`aframe.min.js`,
 `cannon.iife.js`). Never commit `dist/` or `.preview/`.
 
-**Commit the way a careful developer would.** One commit per logical change,
-in the user's words, present tense, specific: "Add a wooden table left of the
-start", "Add a self-check for the table", "Bump Planet Walk to build 4". If a
-request produced several distinct changes, make several commits; the history
-is something the user may read later to learn how work is organised, so make
-it read well. Never one giant "update" commit; never commit half a change.
+**Commit the way a careful developer would.** One commit per logical
+change, in the user's words, present tense, specific. The history is
+something the user may read later to learn how work is organised, so make it
+read well. A request that touches more than one concern gets more than one
+commit, in this order:
 
-**Publishing is a separate decision from saving.** Saving is commits on the
-current branch, pushed. Publishing is getting them onto `main`, which is what
-the Pages workflow deploys. On `main` itself, a push is a publish. On a
-`claude/…` branch (Claude Code on the web always works on one), publish like
-this, in order:
+1. the visible thing ("Add a round clock face where the countdown sign was")
+2. its behaviour ("Sweep the clock hand once round over the 30-second round")
+3. its self-check ("Add a self-check: the hand starts at the top and finishes there")
+4. the build bump ("Bump Bubble Pop to build 4"), which is also where the
+   manifest's `pages.*` fields get recorded
 
-**Primary — open and merge a pull request yourself.** The session's GitHub
-credentials work through the proxy (`GH_TOKEN` reads `proxy-injected`; the
-proxy signs the request). Tested 15 Sep 2026: create → 201, merge → 200.
+Only a one-line tweak ("make the sky darker") is a single commit. Never one
+giant "update" commit; never commit half a change.
 
-    curl -s -o /tmp/pr.json -w '%{http_code}' -X POST \
-      -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-      -H "Content-Type: application/json" \
-      https://api.github.com/repos/<Owner>/<repo>/pulls \
-      -d '{"title":"<what changed, in the user's words>","head":"<branch>","base":"main","body":"<description>"}'
-    # read .number from /tmp/pr.json, then:
-    curl -s -w '%{http_code}' -X PUT \
-      -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-      -H "Content-Type: application/json" \
-      https://api.github.com/repos/<Owner>/<repo>/pulls/<number>/merge \
-      -d '{"merge_method":"merge","commit_title":"Publish: <title>"}'
+**Publishing is part of the job — not something to ask about.** The owner of
+a kit repository has pre-authorised Claude to open and merge its own pull
+requests (it says so in the repo's `CLAUDE.md`/`AGENTS.md`, and the template
+ships that way). Every published build has passed the preview check. So do
+not offer ("say the word and I'll merge it") and do not ask ("shall I?"):
+a turn that ends with saved-but-unpublished work, when the user did not ask
+to hold, is a failed turn — the user may never know what "merge" means, and
+their app would silently never reach the link.
 
-(`gh pr create` / `gh pr merge` do the same when `gh` is installed.) The
-`Content-Type` header is required — without it the proxy answers 415. Use
-`"merge_method":"merge"` so the individual commits stay visible on `main`.
-Write the PR body the way a good colleague would: what changed and why, how
-to try it (the Pages URL), and the build number. One PR per finished piece of
-work; if a branch already has an open PR from this session, merging it
-publishes everything pushed so far — don't open a second.
+**How to publish from a `claude/…` branch** (Claude Code on the web always
+works on one; on `main` itself a push is a publish). Run the kit's script —
+it opens the pull request (or reuses an open one from this branch) and
+merges it, keeping every commit visible on `main`:
 
-**Fallback — the `[publish]` marker.** If either call returns 403 (proxy
-policy can change) and `.github/workflows/auto-publish.yml` exists in the
-repo, make a small commit whose message ends with `[publish]` and push: the
-workflow merges the branch into `main` (keeping every commit) and starts the
-deploy. Use the marker **only** in this case — never alongside a merged PR,
-or the workflow would try to publish twice.
+    python3 ${CLAUDE_PLUGIN_ROOT}/skills/share-xr-app/scripts/publish_pr.py \
+        --title "<what changed, in the user's words>" --body-file /tmp/pr-body.md
 
-**Last resort — the user's two clicks.** Neither route available: say
-plainly "Press **Create PR**, then **Merge** on GitHub, and the link goes
-live a minute or two later" — two clicks, no other steps.
+Write `/tmp/pr-body.md` first, the way a good colleague would: what changed
+and why, how to try it (the Pages URL), the build number. Exit `0` → merged
+(the JSON has the PR link). Exit `3` → GitHub would not merge: read
+`error`/`hint` (nothing new to publish, or the branch is behind `main` —
+merge `main` into the branch, resolve, push, run again). Exit `2` → the API
+refused (403). Only then:
+
+- if `.github/workflows/auto-publish.yml` exists in the repo: make one small
+  commit whose message ends with `[publish]` and push — the workflow merges
+  and deploys. Never use the marker when the script succeeded.
+- otherwise, and only otherwise: tell the user "press **Create PR**, then
+  **Merge** on GitHub — two clicks — and the link goes live a minute or two
+  later", and add `auto-publish.yml` (A4) so it never comes up again.
+
+The API details, for reference: `POST /repos/<o>/<r>/pulls` then
+`PUT /repos/<o>/<r>/pulls/<n>/merge`, with `Authorization: Bearer $GH_TOKEN`
+and `Content-Type: application/json` (the proxy answers 415 without it).
+Tested 15 Sep 2026: 201 and 200.
 
 **When to publish.** By default every request is one finished piece of work:
 build, verify, commit, then publish, and say "live in a couple of minutes".
@@ -316,10 +319,14 @@ Then one or two sentences, and **the link is the last line**:
   signed in to Claude. On an update: "anyone with the link just reloads".
 
 Never explain git, the workflow, the artifact tool, the conversion, or the
-manifest unless asked. The words "commit", "push", "branch" and "repo" don't
-need to appear at all; "saved", "published" and "the link" do the job. If the
-user *asks* how the history is organised, or wants to learn, then explain
-gladly — the commits were written to be read.
+manifest unless asked. The words "commit", "push", "branch", "PR" and "repo"
+don't need to appear at all; "saved", "published" and "the link" do the job.
+Phrases that must not appear in a normal turn: "saved on your branch", "to
+make it live, press…", "say the word and I'll…", "shall I merge". If
+publishing succeeded there is nothing to press; if it failed, say what
+happened in plain words and what you did about it. If the user *asks* how
+the history is organised, or wants to learn, then explain gladly — the
+commits and pull requests were written to be read.
 
 ## When this runs on its own
 
