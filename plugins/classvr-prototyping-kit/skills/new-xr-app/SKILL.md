@@ -196,7 +196,8 @@ Every app leaves this skill with a link recorded in `xr-project.json`.
 One or two sentences: the folder name; if a concept was built, what the game
 does in one line and how to play it (click to look, W/A/S/D to move, Q/E to
 turn; on a headset, **Enter VR**); then how to get it on a headset — on route A
-"open the same link on the headset, or ask me for a QR code", on route B
+"the page has a QR code in its top-right corner — point the headset's scanner
+at it", on route B
 "`/publish-xr-app` puts it on the headset". Do not explain libraries,
 manifests, artifacts, git, or build numbers unless asked.
 

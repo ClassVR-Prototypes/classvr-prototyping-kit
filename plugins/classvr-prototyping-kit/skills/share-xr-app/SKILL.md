@@ -11,7 +11,7 @@ description: >
   app, so the link is never behind the folder, and it always ends by putting the
   link in the chat.
 metadata:
-  version: "0.4.0"
+  version: "0.5.0"
 ---
 
 # Share XR app
@@ -25,7 +25,7 @@ There are two kinds of link, and **where the app lives decides which**:
 
 | The app folder is… | Route | Link | Enter VR on a headset? |
 |---|---|---|---|
-| inside a git repository with a GitHub remote | **A — GitHub Pages** | `https://<owner>.github.io/<repo>/<slug>/` | **Yes** — a plain HTTPS page; scan a QR of it on the headset |
+| inside a git repository with a GitHub remote | **A — GitHub Pages** | `https://<owner>.github.io/<repo>/<slug>/` | **Yes** — a plain HTTPS page; the page shows its own QR code for the headset to scan |
 | a plain folder (Cowork, a local session, no repo) | **B — Claude Artifact** | `https://claude.ai/…/artifact/…` | No — the viewer's frame blocks WebXR |
 
 Route A is preferred whenever it is available. The headset route through
@@ -98,6 +98,13 @@ repo has never been set up for Pages; do it now, once, from the kit's templates:
   to `.github/scripts/build_pages.py`
 - append the lines in `${CLAUDE_PLUGIN_ROOT}/skills/share-xr-app/assets/pages/gitignore-lines`
   to the repo's `.gitignore` (create it if needed)
+
+If `pages.yml` *is* there, check the site builder is current: the kit's
+`build_pages.py` starts with a line `# kit-pages-builder vN`. If the repo's
+`.github/scripts/build_pages.py` has a lower `N`, or no such line at all
+(v1), copy the kit's file over it and commit it on its own: "Update the site
+builder: QR code on every page". Older builders publish the apps but leave
+out the QR code (below).
 
 and tell the user the **one thing that cannot be done from here**: on
 github.com, *Settings → Pages → Build and deployment → Source: GitHub Actions*,
@@ -213,16 +220,33 @@ the page recently may still see the old build after a reload; the build number
 on the panel is how to tell. If that happens, give them the same URL with
 `?b=<N>` on the end, which fetches fresh.
 
-**Headsets.** A Pages URL is a top-level HTTPS page, so **Enter VR works** and
-a plain QR code of the URL opens it straight in the headset browser (tested on
-ClassVR, Sept 2026). If the user wants a QR for the Pages link:
+**Headsets — the QR code is automatic.** A Pages URL is a top-level HTTPS
+page, so **Enter VR works** and a plain QR code of the URL opens it straight
+in the headset browser (tested on ClassVR, Sept 2026). The site builder
+(`build_pages.py`, v2 or later) works out each app's address from the
+repository name at deploy time and adds a card to the **top-right corner of
+the served page** — the QR code, "Open on a headset", and the address — plus
+the same QR beside each app on the site's index page. So the QR exists from
+the first deploy, is right before anyone has looked at the page, and never
+changes while the URL doesn't. It is only in the copy on Pages, added at the
+very end of the file: the app folder, the source's line numbers (which the
+error codes refer to) and the build number are untouched, and entering VR
+hides it like every other HTML overlay. Nothing to run, nothing to record.
+
+The way to use it: open the link on any screen, point the headset's scanner
+at the QR in the corner. Say that once, on the first share.
+
+The address is known before the page is live, so nothing waits on the
+deploy. If someone wants the code *printed* or on a slide, `make_qr.py` still
+makes a PNG of the same URL:
 
     python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/make_qr.py \
         --url "<url>" --title "<App Name>" --subtitle "Scan to open on the headset" \
         --out "<project>/qr-pages.png"
 
 and render it last (it can be committed to the app folder; the URL never
-changes, so neither does the QR).
+changes, so neither does the QR). Do this only when asked — the page already
+carries the code.
 
 **What Pages does not do.** The artifact mailbox (route B) does not exist here:
 browser testers' reports are not collected automatically. Headset play is still
@@ -323,8 +347,9 @@ Then one or two sentences, and **the link is the last line**:
 - Route A, first share: the app name, "build N", where it will appear and
   when ("live in a couple of minutes"; or "once you press Create PR and Merge"
   only when both hands-free routes in A5 failed), that the
-  page is public, and — once — that the same URL works on a headset. Then the
-  URL on its own line.
+  page is public, and — once — that the same URL works on a headset: "the
+  page shows a QR code in its top-right corner — point the headset's scanner
+  at it". Then the URL on its own line.
 - Route A, update: "build N is on its way to the link — reload in a couple of
   minutes (the panel shows the build number)". Then the URL on its own line.
 - Route A, saved but not published (user asked to hold): "saved, not live yet
@@ -359,9 +384,10 @@ commits and pull requests were written to be read.
 
 **Pages link (route A)**
 
-- Public, top-level, permanent while the repo exists. Enter VR works; a QR of
-  the URL opens it on a ClassVR headset. Renaming the repo or the app's slug
-  changes the URL, so don't.
+- Public, top-level, permanent while the repo exists. Enter VR works; the
+  page carries a QR of its own URL (top-right corner, and on the site's index
+  page) that opens it on a ClassVR headset. Renaming the repo or the app's
+  slug changes the URL — and so the QR — so don't.
 - Version history is the repo's history. "Go back to build 3" is a git revert
   of the app folder, which Claude can do when asked.
 - No automatic tester reports; use `/check-headset` for headset sessions.

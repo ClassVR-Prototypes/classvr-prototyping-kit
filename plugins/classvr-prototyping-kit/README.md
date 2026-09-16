@@ -91,8 +91,10 @@ changes, so a colleague who has it just reloads; the build number on the panel
 says which version they're looking at. Which link depends on where the app
 lives. In a **GitHub repository** — how Claude Code works — it is a public
 GitHub Pages URL (`https://<owner>.github.io/<repo>/<slug>/`), a plain web page
-that opens on a desktop *and* enters VR on a headset, so a QR of it is all a
-headset needs; the repo's history is the app's history. In a **plain folder**
+that opens on a desktop *and* enters VR on a headset; the published page
+carries a QR code of its own address in the corner, so pointing the headset's
+scanner at any screen showing the app is all it takes; the repo's history is
+the app's history. In a **plain folder**
 (Cowork) it is a Claude Artifact: private until shared from the page's Share
 menu, viewers signed in to Claude, updatable only by whoever created it, and
 unable to enter VR — headsets then go through ClassCloud + QR. Both routes share
