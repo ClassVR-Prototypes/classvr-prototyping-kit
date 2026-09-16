@@ -103,8 +103,11 @@ If `pages.yml` *is* there, check the site builder is current: the kit's
 `build_pages.py` starts with a line `# kit-pages-builder vN`. If the repo's
 `.github/scripts/build_pages.py` has a lower `N`, or no such line at all
 (v1), copy the kit's file over it and commit it on its own: "Update the site
-builder: QR code on every page". Older builders publish the apps but leave
-out the QR code (below).
+builder: QR code on every page". v1 publishes the apps without the QR code
+(below); v2 tried to `pip install` its encoder and silently published
+without it on GitHub's runners. If a repo's `pages.yml` gained a
+`setup-python` / "QR code support" step to work around v2, it is harmless
+and can be left alone or removed.
 
 and tell the user the **one thing that cannot be done from here**: on
 github.com, *Settings → Pages → Build and deployment → Source: GitHub Actions*,
@@ -223,8 +226,10 @@ on the panel is how to tell. If that happens, give them the same URL with
 **Headsets — the QR code is automatic.** A Pages URL is a top-level HTTPS
 page, so **Enter VR works** and a plain QR code of the URL opens it straight
 in the headset browser (tested on ClassVR, Sept 2026). The site builder
-(`build_pages.py`, v2 or later) works out each app's address from the
-repository name at deploy time and adds a card to the **top-right corner of
+(`build_pages.py`, v3 or later) works out each app's address from the
+repository name at deploy time, draws the QR itself — the encoder is built
+into the script, because the runner's python has no pip and nothing can be
+installed there — and adds a card to the **top-right corner of
 the served page** — the QR code, "Open on a headset", and the address — plus
 the same QR beside each app on the site's index page. So the QR exists from
 the first deploy, is right before anyone has looked at the page, and never

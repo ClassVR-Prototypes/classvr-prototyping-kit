@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# kit-pages-builder v2 — the share-xr-app skill compares this line with its own copy.
+# kit-pages-builder v3 — the share-xr-app skill compares this line with its own copy.
 """Assemble the GitHub Pages site from the kit apps in this repo.
 
 Every folder holding an `xr-project.json` is one app. It is copied to
@@ -29,6 +29,9 @@ both, and `--base-url` / the PAGES_BASE_URL variable win over everything —
 useful for a local preview. With no address at all the site still builds,
 just without QR codes.
 
+The QR encoder is built in (below): the runner's python has no pip, so the
+builder must not depend on anything that needs installing.
+
 Prints a one-line summary per app. Exit 0 even with no apps — an empty
 repo should still publish its index rather than fail the deploy.
 """
@@ -38,7 +41,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 
 # Copied into the site as-is; everything else in an app folder is skipped.
@@ -118,31 +120,267 @@ def site_base_url(root, override=None):
     return None
 
 
-# --- QR codes ----------------------------------------------------------------
+# --- a small QR code encoder, no dependencies -------------------------------
+# Byte mode, error-correction level M, versions 1–40, all eight masks scored
+# per the spec. Enough for a URL. Returns the module matrix (list of rows of
+# bools). Written for the site builder so a GitHub runner with a bare python
+# (no pip) can still draw the code.
 
-def _qrcode_module():
-    """The `qrcode` package, installing it on the fly if the runner lacks it."""
-    try:
-        return __import__('qrcode')
-    except ImportError:
-        pass
-    for extra in ([], ['--user'], ['--break-system-packages']):
-        try:
-            subprocess.run([sys.executable, '-m', 'pip', 'install', '--quiet', 'qrcode'] + extra,
-                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
-            return __import__('qrcode')
-        except Exception:
+_EC_M = [  # version -> (ec codewords per block, blocks in group 1, data cw per g1 block, blocks in group 2, data cw per g2 block)
+    None,
+    (10, 1, 16, 0, 0), (16, 1, 28, 0, 0), (26, 1, 44, 0, 0), (18, 2, 32, 0, 0), (24, 2, 43, 0, 0),
+    (16, 4, 27, 0, 0), (18, 4, 31, 0, 0), (22, 2, 38, 2, 39), (22, 3, 36, 2, 37), (26, 4, 43, 1, 44),
+    (30, 1, 50, 4, 51), (22, 6, 36, 2, 37), (22, 8, 37, 1, 38), (24, 4, 40, 5, 41), (24, 5, 41, 5, 42),
+    (28, 7, 45, 3, 46), (28, 10, 46, 1, 47), (26, 9, 43, 4, 44), (26, 3, 44, 11, 45), (26, 3, 41, 13, 42),
+    (26, 17, 42, 0, 0), (28, 17, 46, 0, 0), (28, 4, 47, 14, 48), (28, 6, 45, 14, 46), (28, 8, 47, 13, 48),
+    (28, 19, 46, 4, 47), (28, 22, 45, 3, 46), (28, 3, 45, 23, 46), (28, 21, 45, 7, 46), (28, 19, 47, 10, 48),
+    (28, 2, 46, 29, 47), (28, 10, 46, 23, 47), (28, 14, 46, 21, 47), (28, 14, 46, 23, 47), (28, 12, 47, 26, 48),
+    (28, 6, 47, 34, 48), (28, 29, 46, 14, 47), (28, 13, 46, 32, 47), (28, 40, 47, 7, 48), (28, 18, 47, 31, 48),
+]
+
+_EXP = [0] * 512
+_LOG = [0] * 256
+_x = 1
+for _i in range(255):
+    _EXP[_i] = _x
+    _LOG[_x] = _i
+    _x <<= 1
+    if _x & 0x100:
+        _x ^= 0x11d
+for _i in range(255, 512):
+    _EXP[_i] = _EXP[_i - 255]
+
+
+def _rs_generator(n):
+    g = [1]
+    for i in range(n):
+        g = _poly_mul(g, [1, _EXP[i]])
+    return g
+
+
+def _poly_mul(a, b):
+    out = [0] * (len(a) + len(b) - 1)
+    for i, x in enumerate(a):
+        if not x:
             continue
-    return None
+        for j, y in enumerate(b):
+            if y:
+                out[i + j] ^= _EXP[_LOG[x] + _LOG[y]]
+    return out
 
 
-def qr_svg(url, qrcode):
+def _rs_encode(data, n_ec):
+    gen = _rs_generator(n_ec)
+    rem = list(data) + [0] * n_ec
+    for i in range(len(data)):
+        c = rem[i]
+        if c:
+            for j in range(1, len(gen)):
+                rem[i + j] ^= _EXP[_LOG[gen[j]] + _LOG[c]]
+    return rem[len(data):]
+
+
+def _bch(value, poly, bits):
+    """Append BCH remainder: value shifted left by `bits`, divided by poly."""
+    v = value << bits
+    top = poly.bit_length()
+    for i in range(v.bit_length() - top, -1, -1):
+        if v & (1 << (i + top - 1)):
+            v ^= poly << i
+    return (value << bits) | v
+
+
+def _alignment_positions(version):
+    if version == 1:
+        return []
+    n = version // 7 + 2
+    size = version * 4 + 17
+    step = 26 if version == 32 else -(-(size - 13) // (2 * n - 2)) * 2
+    positions = [6]
+    pos = size - 7
+    for _ in range(n - 1):
+        positions.insert(1, pos)
+        pos -= step
+    return positions
+
+
+def qr_matrix(text):
+    data = text.encode('utf-8')
+    # pick the smallest version whose data capacity fits (byte mode, level M)
+    for version in range(1, 41):
+        ec, g1, d1, g2, d2 = _EC_M[version]
+        capacity = g1 * d1 + g2 * d2
+        cci = 8 if version < 10 else 16
+        if 4 + cci + 8 * len(data) <= capacity * 8:
+            break
+    else:
+        raise ValueError('text too long for a QR code')
+
+    # --- data codewords
+    bits = []
+
+    def put(val, n):
+        for i in range(n - 1, -1, -1):
+            bits.append((val >> i) & 1)
+    put(0b0100, 4)
+    put(len(data), cci)
+    for b in data:
+        put(b, 8)
+    put(0, min(4, capacity * 8 - len(bits)))
+    while len(bits) % 8:
+        bits.append(0)
+    codewords = [int(''.join(map(str, bits[i:i + 8])), 2) for i in range(0, len(bits), 8)]
+    pad = (0xEC, 0x11)
+    i = 0
+    while len(codewords) < capacity:
+        codewords.append(pad[i & 1])
+        i += 1
+
+    # --- blocks + error correction, then interleave
+    blocks, pos = [], 0
+    for count, length in ((g1, d1), (g2, d2)):
+        for _ in range(count):
+            blocks.append(codewords[pos:pos + length])
+            pos += length
+    ecs = [_rs_encode(b, ec) for b in blocks]
+    seq = []
+    for k in range(max(len(b) for b in blocks)):
+        for b in blocks:
+            if k < len(b):
+                seq.append(b[k])
+    for k in range(ec):
+        for e in ecs:
+            seq.append(e[k])
+
+    # --- the matrix: None = free, True/False = fixed pattern
+    size = version * 4 + 17
+    m = [[None] * size for _ in range(size)]
+
+    def finder(r, c):
+        for dr in range(-1, 8):
+            for dc in range(-1, 8):
+                rr, cc = r + dr, c + dc
+                if 0 <= rr < size and 0 <= cc < size:
+                    edge = dr in (-1, 7) or dc in (-1, 7)
+                    ring = dr in (0, 6) or dc in (0, 6)
+                    core = 2 <= dr <= 4 and 2 <= dc <= 4
+                    m[rr][cc] = (not edge) and (ring or core)
+    finder(0, 0)
+    finder(0, size - 7)
+    finder(size - 7, 0)
+    for i in range(8, size - 8):                   # timing
+        m[6][i] = m[i][6] = (i % 2 == 0)
+    aps = _alignment_positions(version)
+    for r in aps:
+        for c in aps:
+            if (r <= 8 and c <= 8) or (r <= 8 and c >= size - 9) or (r >= size - 9 and c <= 8):
+                continue                            # would overlap a finder
+            for dr in range(-2, 3):
+                for dc in range(-2, 3):
+                    m[r + dr][c + dc] = max(abs(dr), abs(dc)) != 1
+    m[size - 8][8] = True                           # dark module
+    # reserve format areas (filled after masking)
+    for i in range(9):
+        if m[8][i] is None: m[8][i] = False
+        if m[i][8] is None: m[i][8] = False
+    for i in range(size - 8, size):
+        m[8][i] = False
+    for i in range(size - 7, size):
+        m[i][8] = False
+    if version >= 7:                                # version info
+        vinfo = _bch(version, 0x1F25, 12)
+        for i in range(18):
+            bit = bool((vinfo >> i) & 1)
+            m[i // 3][size - 11 + i % 3] = bit
+            m[size - 11 + i % 3][i // 3] = bit
+
+    # --- place data in the zig-zag
+    fixed = [[cell is not None for cell in row] for row in m]
+    bitstream = []
+    for cw in seq:
+        for i in range(7, -1, -1):
+            bitstream.append((cw >> i) & 1)
+    bi = 0
+    col = size - 1
+    upward = True
+    while col > 0:
+        if col == 6:
+            col -= 1
+        rows = range(size - 1, -1, -1) if upward else range(size)
+        for r in rows:
+            for c in (col, col - 1):
+                if not fixed[r][c]:
+                    m[r][c] = bool(bitstream[bi]) if bi < len(bitstream) else False
+                    bi += 1
+        col -= 2
+        upward = not upward
+
+    # --- masks, scored
+    masks = [
+        lambda r, c: (r + c) % 2 == 0,
+        lambda r, c: r % 2 == 0,
+        lambda r, c: c % 3 == 0,
+        lambda r, c: (r + c) % 3 == 0,
+        lambda r, c: (r // 2 + c // 3) % 2 == 0,
+        lambda r, c: (r * c) % 2 + (r * c) % 3 == 0,
+        lambda r, c: ((r * c) % 2 + (r * c) % 3) % 2 == 0,
+        lambda r, c: ((r + c) % 2 + (r * c) % 3) % 2 == 0,
+    ]
+
+    def apply(mask_id):
+        f = masks[mask_id]
+        out = [[(m[r][c] ^ f(r, c)) if not fixed[r][c] else m[r][c] for c in range(size)] for r in range(size)]
+        fmt = _bch((0b00 << 3) | mask_id, 0x537, 10) ^ 0x5412   # level M = 00
+        for i in range(15):
+            bit = bool((fmt >> i) & 1)
+            # vertical strip beside top-left finder / horizontal beside bottom-left
+            if i < 6:
+                out[i][8] = bit
+            elif i < 8:
+                out[i + 1][8] = bit
+            else:
+                out[size - 15 + i][8] = bit
+            if i < 8:
+                out[8][size - 1 - i] = bit
+            elif i < 9:
+                out[8][7] = bit
+            else:
+                out[8][14 - i] = bit
+        return out
+
+    def penalty(g):
+        n = 0
+        for lines in (g, list(zip(*g))):
+            for line in lines:
+                run, prev = 0, None
+                for v in line:
+                    if v == prev:
+                        run += 1
+                    else:
+                        if run >= 5:
+                            n += 3 + run - 5
+                        run, prev = 1, v
+                if run >= 5:
+                    n += 3 + run - 5
+                # finder-like 1:1:3:1:1 patterns with 4 light modules either side
+                s = ''.join('1' if v else '0' for v in line)
+                n += 40 * (s.count('10111010000') + s.count('00001011101'))
+        for r in range(size - 1):
+            for c in range(size - 1):
+                if g[r][c] == g[r][c + 1] == g[r + 1][c] == g[r + 1][c + 1]:
+                    n += 3
+        dark = sum(v for row in g for v in row)
+        k = abs(dark * 100 // (size * size) - 50) // 5
+        n += 10 * k
+        return n
+
+    best = min(range(8), key=lambda i: penalty(apply(i)))
+    return apply(best)
+
+
+def qr_svg(url):
     """An inline SVG of the URL's QR code: quiet zone included, crisp at any size."""
-    from qrcode.constants import ERROR_CORRECT_M
-    qr = qrcode.QRCode(error_correction=ERROR_CORRECT_M, border=0)
-    qr.add_data(url)
-    qr.make(fit=True)
-    matrix = qr.get_matrix()
+    matrix = qr_matrix(url)
     n = len(matrix)
     quiet = 3                                          # modules of white around the code
     size = n + 2 * quiet
@@ -302,17 +540,11 @@ def main():
     os.makedirs(out)
 
     base = site_base_url(a.root, a.base_url)
-    qrcode = None
-    if a.no_qr:
-        pass
-    elif not base:
+    want_qr = not a.no_qr
+    if want_qr and not base:
         print('  ! no site address known (not in GitHub Actions, no CNAME, no --base-url) — no QR codes this time',
               file=sys.stderr)
-    else:
-        qrcode = _qrcode_module()
-        if qrcode is None:
-            print('  ! the qrcode package is not available and could not be installed — publishing without QR codes',
-                  file=sys.stderr)
+        want_qr = False
 
     apps, seen = [], {}
     for app_dir in find_apps(a.root):
@@ -331,8 +563,8 @@ def main():
         files = copy_app(app_dir, dest)
         svg = None
         url = (base + slug + '/') if base else None
-        if qrcode and url:
-            svg = qr_svg(url, qrcode)
+        if want_qr and url:
+            svg = qr_svg(url)
             inject_qr(os.path.join(dest, 'index.html'), url, svg)
         apps.append({'name': name, 'slug': slug, 'concept': manifest.get('concept') or '',
                      'dof': manifest.get('dof'), 'build': manifest.get('build'), 'svg': svg})
