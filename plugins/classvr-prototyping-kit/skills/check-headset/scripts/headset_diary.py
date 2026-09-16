@@ -13,7 +13,7 @@ groups them into sessions — one per page load — with the diary entries in or
 It also notes the other pages Wolvic loaded and a few headset-level lines
 (OpenXR session changes, crashes) so "the page never started" is visible too.
 
-    python3 headset_diary.py --log device.log [--app <slug>] [--since "09-07 16:00"] [--json out.json] [--summary]
+    python3 headset_diary.py --log device.log [--app <name or slug>] [--since "09-07 16:00"] [--json out.json] [--summary]
 
 Log timestamps are the headset's local clock (no year, no zone). Nothing here
 needs the network.
@@ -35,17 +35,38 @@ def b64d(s):
     s += '=' * (-len(s) % 4)
     return base64.b64decode(s).decode('utf-8', 'replace')
 
+def slugify(text):
+    """The same rule the kit uses for folder → URL: lower-case, runs of anything
+    that isn't a letter or digit become one hyphen."""
+    return re.sub(r'[^a-z0-9]+', '-', (text or '').lower()).strip('-')
+
 def page_of(url):
+    """Identify the kit page a load refers to. Two URL shapes are known:
+    AVNFS (ClassCloud): …?name=<slug>-build<N>.html — slug and build in the name
+    GitHub Pages:       https://<owner>.github.io/<repo>/<slug>/[index.html][?b=<N>]
+    Anything else: last path segment as the slug, no build."""
+    from urllib.parse import unquote, urlsplit, parse_qs
     base = url.split('#')[0]
     m = NAME.search(base)
-    name = m.group(1) if m else base.split('/')[-1][:60]
-    try:
-        from urllib.parse import unquote
-        name = unquote(name)
-    except Exception:
-        pass
-    b = BUILD.search(name)
-    return {'url': base, 'file': name, 'slug': re.sub(r'-build\d+\.html$', '', name), 'build': int(b.group(1)) if b else None}
+    if m:                                   # AVNFS
+        name = unquote(m.group(1))
+        b = BUILD.search(name)
+        return {'url': base, 'file': name, 'slug': re.sub(r'-build\d+\.html$', '', name), 'build': int(b.group(1)) if b else None}
+    u = urlsplit(base)
+    segs = [unquote(x) for x in u.path.split('/') if x]
+    if segs and segs[-1].lower().endswith('.html'):
+        segs = segs[:-1] if segs[-1].lower() == 'index.html' else segs[:-1] + [re.sub(r'\.html$', '', segs[-1], flags=re.I)]
+    slug = slugify(segs[-1]) if segs else (u.netloc or base)[:60]
+    q = parse_qs(u.query)
+    bq = q.get('b', [None])[0]
+    return {'url': base, 'file': (segs[-1] if segs else '') + '/', 'slug': slug,
+            'build': int(bq) if bq and bq.isdigit() else None}
+
+def same_app(session, wanted):
+    """--app accepts the app's name ("Bubble Pop"), its slug ("bubble-pop"), or
+    anything that slugifies to the same thing ("bubble pop", "BUBBLE_POP")."""
+    w = slugify(wanted)
+    return w and (slugify(session.get('slug')) == w or slugify(session.get('app')) == w)
 
 def parse(path, since=None):
     sessions = OrderedDict()      # session id -> dict
@@ -135,12 +156,12 @@ def before(entries, t, seconds=10):
 def summarise(sessions, loads, notable, app=None):
     lines = []
     if app:
-        sessions = [s for s in sessions if s['slug'] == app or (s.get('app') or '').lower() == app.lower()]
+        sessions = [s for s in sessions if same_app(s, app)]
     if not sessions:
         lines.append('No kit diaries found in this log' + (' for ' + app if app else '') + '.')
-        kit_loads = [l for l in loads if 'avnfs.com' in l['url']]
+        kit_loads = [l for l in loads if 'avnfs.com' in l['url'] or '.github.io/' in l['url'] or '#kit=' in l['url']]
         if kit_loads:
-            lines.append('Pages Wolvic did load from ClassCloud: ' + ', '.join('%s at %s' % (l['file'], l['ts']) for l in kit_loads[-5:]))
+            lines.append('Kit pages Wolvic did load: ' + ', '.join('%s at %s' % (l['file'], l['ts']) for l in kit_loads[-5:]))
             lines.append('A page that loaded but wrote no diary either predates the logbook (republish it) or died before its first script ran — see the notable lines.')
         return '\n'.join(lines)
     for s in sessions:
@@ -190,7 +211,7 @@ def summarise(sessions, loads, notable, app=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--log', required=True)
-    ap.add_argument('--app', help='slug or name; only report this app')
+    ap.add_argument('--app', help='app name ("Bubble Pop"), slug (bubble-pop) or folder name — any of them; only report this app')
     ap.add_argument('--since', help='ignore lines before this logcat time, e.g. "09-07 16:00"')
     ap.add_argument('--json', help='write the full structured result here')
     ap.add_argument('--summary', action='store_true', help='print a plain-words summary')
@@ -198,7 +219,7 @@ def main():
     a = ap.parse_args()
     sessions, loads, notable = parse(a.log, a.since)
     if a.app:
-        sessions = [s for s in sessions if s['slug'] == a.app or (s.get('app') or '').lower() == a.app.lower()]
+        sessions = [s for s in sessions if same_app(s, a.app)]
     if a.last:
         sessions = sessions[-a.last:]
     result = {'sessions': sessions, 'pageLoads': loads[-20:], 'notable': notable[-40:]}

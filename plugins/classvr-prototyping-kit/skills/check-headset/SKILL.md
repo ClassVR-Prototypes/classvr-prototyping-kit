@@ -68,7 +68,7 @@ when it slept until nudged. The log upload itself does not update
 
     curl -sL -o /tmp/headset.log "<logUrl>"
     python3 /root/.claude/plugins/synced/2606ec73-0328-4925-84de-5e3387c5460a_efef4036-254f-4e69-806f-fb6c79b26b36/classvr-prototyping-kit/skills/check-headset/scripts/headset_diary.py \
-        --log /tmp/headset.log --app <slug> --json /tmp/headset.json --summary
+        --log /tmp/headset.log --app "<App Name or slug>" --json /tmp/headset.json --summary
 
 The summary is for you to read, not to paste. `/tmp/headset.json` has every
 session (`sessions[]`, newest last) with `entries` (the full diary in order),
