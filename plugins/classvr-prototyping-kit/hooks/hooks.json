@@ -1,0 +1,16 @@
+{
+  "description": "ClassVR Prototyping Kit: a turn in a kit repository may not end with unpublished work.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/stop_publish_check.py\"",
+            "timeout": 90
+          }
+        ]
+      }
+    ]
+  }
+}

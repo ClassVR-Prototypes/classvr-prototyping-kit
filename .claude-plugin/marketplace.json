@@ -12,7 +12,7 @@
       "source": "./plugins/classvr-prototyping-kit",
       "displayName": "ClassVR Prototyping Kit",
       "description": "Create a working WebXR scene, share it on a permanent link, and publish it to ClassCloud as a scannable QR code — no terminal, no libraries to install.",
-      "version": "0.18.0",
+      "version": "0.19.0",
       "author": { "name": "Avantis — Project Ptah" },
       "repository": "https://github.com/ClassVR-Prototypes/classvr-prototyping-kit",
       "keywords": ["webxr", "classvr", "a-frame", "vr", "prototype", "eduverse"],

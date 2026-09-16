@@ -31,6 +31,11 @@ skills/
     references/classvr-xcelerate.md   the target headset and its Wolvic build: specs, behaviour, gaps
 ```
 
+The kit also carries one **hook** (`hooks/hooks.json` → `scripts/stop_publish_check.py`):
+in a repository of kit apps, a turn cannot end with work that hasn't reached
+`main`, unless the latest commit is marked `[hold]`. It is what makes "your
+change is live" reliable rather than usual.
+
 Each skill carries the scripts it needs (`scaffold.py`, `build.py`,
 `preview.py`, `artifact.py`, `publish_pr.py`, `upload.py`, `make_qr.py`, `manifest.py`,
 `headset_diary.py`). Claude

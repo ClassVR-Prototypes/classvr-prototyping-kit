@@ -173,9 +173,20 @@ Tested 15 Sep 2026: 201 and 200.
 **When to publish.** By default every request is one finished piece of work:
 build, verify, commit, then publish, and say "live in a couple of minutes".
 If the user says they want several changes before anything goes live ("don't
-publish yet", "I'll tell you when"), save only — push the commits, say the
-work is saved but not live — and publish when they say "publish" / "put it
-live" / "update the link". Never publish a build that failed the preview.
+publish yet", "I'll tell you when"), save only: push the commits and make the
+**latest commit message end with `[hold]`** — that is how the hold is
+recorded, and it survives into later sessions. Say the work is saved but not
+live. When they say "publish" / "put it live" / "update the link", make the
+publishing commit (bump the build if the source changed) and run
+`publish_pr.py`. Never publish a build that failed the preview.
+
+**The kit checks.** The kit ships a Stop hook: when a turn is about to end in
+a kit repository with commits that `main` doesn't have (or uncommitted app
+changes), and the latest commit isn't marked `[hold]`, the turn is not allowed
+to end — the hook says so and names the script to run. Don't argue with it or
+explain it to the user; publish, then finish. If publishing is impossible
+(script exit 2 with no fallback, or exit 3 you cannot fix), say plainly what
+is stopping it — the hook lets the turn end after two reminders.
 
 Then the URL. Work it out from the remote:
 
