@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# kit-pages-builder v3 — the share-xr-app skill compares this line with its own copy.
+# kit-pages-builder v4 — the share-xr-app skill compares this line with its own copy.
 """Assemble the GitHub Pages site from the kit apps in this repo.
 
 Every folder holding an `xr-project.json` is one app. It is copied to
@@ -10,7 +10,8 @@ into a headset browser and one they cannot.
 
 Each served app page also gets a **QR code of its own address** in the top
 right corner, so a ClassVR headset can scan the screen of whoever has the
-page open and jump straight into it. The address is known before the page
+page open and jump straight into it. Clicking the code fills the screen
+with it for easier scanning; clicking again, the cross, or Esc shrinks it. The address is known before the page
 is live — it follows from the repository name — so the QR is right from the
 first deploy and never changes afterwards; nothing in the app folder is
 touched, the code is added to the copy in `_site/` only, at the very end of
@@ -382,7 +383,7 @@ def qr_svg(url):
     """An inline SVG of the URL's QR code: quiet zone included, crisp at any size."""
     matrix = qr_matrix(url)
     n = len(matrix)
-    quiet = 3                                          # modules of white around the code
+    quiet = 4                                          # modules of white around the code (the spec's quiet zone)
     size = n + 2 * quiet
     runs = []
     for y, row in enumerate(matrix):
@@ -403,23 +404,50 @@ def qr_svg(url):
 # One line, added just before </body> of the served copy. It is its own little
 # card (not part of the kit panel) so it works for every app ever made with the
 # kit, whatever version of the template it was created from. Entering VR hides
-# every HTML overlay, so it never appears inside the headset. pointer-events
-# stays off: the card must not steal clicks from the scene.
+# every HTML overlay, so it never appears inside the headset. Clicking the card
+# (or pressing Enter on it) fills the screen with the code so a headset can
+# scan it from across a desk; clicking again, the cross, or Esc puts it back.
 QR_CARD = (
     '<style>#kit-qr{position:fixed;top:12px;right:12px;z-index:9998;display:flex;align-items:center;gap:10px;'
     'font:12px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#40505f;'
     'background:rgba(255,255,255,.92);border:1px solid rgba(64,80,95,.18);border-radius:10px;padding:8px 10px 8px 8px;'
-    'pointer-events:none;backdrop-filter:blur(4px);max-width:360px}'
+    'cursor:zoom-in;user-select:none;backdrop-filter:blur(4px);max-width:360px;transition:background .15s}'
+    '#kit-qr:hover{background:#fff}'
     '#kit-qr svg{width:148px;height:148px;flex:none;border-radius:4px}'
     '#kit-qr b{display:block;font-weight:600;font-size:13px;color:#1d2733}'
     '#kit-qr span{display:block;color:#6c7d8e}'
     '#kit-qr code{display:block;margin-top:4px;font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;'
     'color:#2f6f8f;word-break:break-all}'
-    '@media (max-width:700px),(max-height:520px){#kit-qr{padding:6px;gap:0}'
-    '#kit-qr svg{width:96px;height:96px}#kit-qr .t{display:none}}</style>'
-    '<div id="kit-qr">%(svg)s<div class="t"><b>Open on a headset</b><span>Scan with the ClassVR scanner</span>'
-    '<code>%(short)s</code></div></div>'
-    '<script>window.KIT_PAGES_URL=%(json)s;</script>'
+    '#kit-qr .hint{display:block;margin-top:6px;color:#8a98a6;font-size:11px}'
+    '#kit-qr .x{display:none}'
+    '#kit-qr.big{top:0;right:0;bottom:0;left:0;z-index:10002;max-width:none;border:0;border-radius:0;padding:24px;'
+    'flex-direction:column;justify-content:center;gap:18px;background:rgba(18,26,34,.82);cursor:zoom-out}'
+    '#kit-qr.big svg{width:min(72vmin,600px);height:min(72vmin,600px);border-radius:14px;'
+    'box-shadow:0 12px 48px rgba(0,0,0,.45)}'
+    '#kit-qr.big .t{display:block;text-align:center;max-width:90vw}'
+    '#kit-qr.big b{color:#fff;font-size:20px}#kit-qr.big span{color:#c9d3dc;font-size:14px}'
+    '#kit-qr.big code{color:#9fd3ff;font-size:14px;margin-top:8px}'
+    '#kit-qr.big .hint{color:#8a98a6;font-size:13px;margin-top:10px}'
+    '#kit-qr.big .x{display:block;position:fixed;top:14px;right:18px;width:44px;height:44px;border:0;border-radius:50%%;'
+    'background:rgba(255,255,255,.16);color:#fff;font:26px/44px sans-serif;text-align:center;cursor:pointer}'
+    '#kit-qr.big .x:hover{background:rgba(255,255,255,.3)}'
+    '@media (max-height:560px){#kit-qr.big svg{width:min(56vmin,600px);height:min(56vmin,600px)}#kit-qr.big{gap:10px}}'
+    '@media (max-width:700px),(max-height:520px){#kit-qr:not(.big){padding:6px;gap:0}'
+    '#kit-qr:not(.big) svg{width:96px;height:96px}#kit-qr:not(.big) .t{display:none}}</style>'
+    '<div id="kit-qr" role="button" tabindex="0" aria-label="QR code — click to enlarge for scanning" '
+    'title="Click to enlarge for scanning">%(svg)s<div class="t"><b>Open on a headset</b>'
+    '<span>Scan with the ClassVR scanner</span><code>%(short)s</code>'
+    '<span class="hint">Click to enlarge</span></div>'
+    '<button class="x" type="button" aria-label="Back to normal size">&times;</button></div>'
+    '<script>window.KIT_PAGES_URL=%(json)s;(function(){var q=document.getElementById("kit-qr");if(!q)return;'
+    'var h=q.querySelector(".hint");function set(on){q.classList.toggle("big",on);'
+    'if(h)h.textContent=on?"Click anywhere, press Esc or the cross to shrink it again":"Click to enlarge";'
+    'q.setAttribute("aria-expanded",on?"true":"false");if(!on)q.blur();}'
+    'q.addEventListener("click",function(e){e.stopPropagation();set(!q.classList.contains("big"));});'
+    'q.addEventListener("keydown",function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();e.stopPropagation();'
+    'set(!q.classList.contains("big"));}});'
+    'document.addEventListener("keydown",function(e){if(e.key==="Escape"&&q.classList.contains("big"))set(false);});'
+    '})();</script>'
 )
 
 

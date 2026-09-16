@@ -105,7 +105,7 @@ If `pages.yml` *is* there, check the site builder is current: the kit's
 (v1), copy the kit's file over it and commit it on its own: "Update the site
 builder: QR code on every page". v1 publishes the apps without the QR code
 (below); v2 tried to `pip install` its encoder and silently published
-without it on GitHub's runners. If a repo's `pages.yml` gained a
+without it on GitHub's runners; v3 has no click-to-enlarge. If a repo's `pages.yml` gained a
 `setup-python` / "QR code support" step to work around v2, it is harmless
 and can be left alone or removed.
 
@@ -226,20 +226,23 @@ on the panel is how to tell. If that happens, give them the same URL with
 **Headsets — the QR code is automatic.** A Pages URL is a top-level HTTPS
 page, so **Enter VR works** and a plain QR code of the URL opens it straight
 in the headset browser (tested on ClassVR, Sept 2026). The site builder
-(`build_pages.py`, v3 or later) works out each app's address from the
+(`build_pages.py`, v4 or later) works out each app's address from the
 repository name at deploy time, draws the QR itself — the encoder is built
 into the script, because the runner's python has no pip and nothing can be
 installed there — and adds a card to the **top-right corner of
 the served page** — the QR code, "Open on a headset", and the address — plus
-the same QR beside each app on the site's index page. So the QR exists from
+the same QR beside each app on the site's index page. **Clicking the card
+fills the screen with the code** so a headset can scan it from across a
+desk; clicking again, the cross, or Esc puts it back in the corner. So the
+QR exists from
 the first deploy, is right before anyone has looked at the page, and never
 changes while the URL doesn't. It is only in the copy on Pages, added at the
 very end of the file: the app folder, the source's line numbers (which the
 error codes refer to) and the build number are untouched, and entering VR
 hides it like every other HTML overlay. Nothing to run, nothing to record.
 
-The way to use it: open the link on any screen, point the headset's scanner
-at the QR in the corner. Say that once, on the first share.
+The way to use it: open the link on any screen, click the QR to enlarge it,
+point the headset's scanner at it. Say that once, on the first share.
 
 The address is known before the page is live, so nothing waits on the
 deploy. If someone wants the code *printed* or on a slide, `make_qr.py` still
@@ -353,8 +356,8 @@ Then one or two sentences, and **the link is the last line**:
   when ("live in a couple of minutes"; or "once you press Create PR and Merge"
   only when both hands-free routes in A5 failed), that the
   page is public, and — once — that the same URL works on a headset: "the
-  page shows a QR code in its top-right corner — point the headset's scanner
-  at it". Then the URL on its own line.
+  page shows a QR code in its top-right corner — click it to make it big,
+  then point the headset's scanner at it". Then the URL on its own line.
 - Route A, update: "build N is on its way to the link — reload in a couple of
   minutes (the panel shows the build number)". Then the URL on its own line.
 - Route A, saved but not published (user asked to hold): "saved, not live yet
