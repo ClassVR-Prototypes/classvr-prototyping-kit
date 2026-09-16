@@ -165,6 +165,10 @@ refused (403). Only then:
   **Merge** on GitHub — two clicks — and the link goes live a minute or two
   later", and add `auto-publish.yml` (A4) so it never comes up again.
 
+If you use Claude Code's built-in GitHub merge tool instead of the script and
+it answers `409 Head branch was modified`, that is its stale-tip check after a
+push: run it again (or use the script, which doesn't have that check).
+
 The API details, for reference: `POST /repos/<o>/<r>/pulls` then
 `PUT /repos/<o>/<r>/pulls/<n>/merge`, with `Authorization: Bearer $GH_TOKEN`
 and `Content-Type: application/json` (the proxy answers 415 without it).
