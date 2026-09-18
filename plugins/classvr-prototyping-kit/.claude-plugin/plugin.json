@@ -1,6 +1,6 @@
 {
   "name": "classvr-prototyping-kit",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "description": "Build WebXR prototypes for ClassVR headsets without touching a terminal: create a working scene, share it on a permanent link (GitHub Pages, Vercel or a Claude Artifact), and publish it to ClassCloud as a scannable QR code.",
   "author": {
     "name": "Avantis — Project Ptah"

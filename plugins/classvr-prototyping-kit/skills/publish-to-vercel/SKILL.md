@@ -11,8 +11,11 @@ description: >
   loads the kit's plumbing from a shared, versioned library, deploys it through
   the Vercel connector — no Git, no terminal, no upload screen — verifies it
   live at a stable public URL, and ends with the QR code a headset can scan.
+  Apps on this route send their diary to the same project, so "what went wrong
+  on the headset / in the browser?" is answered from the Vercel connector's
+  runtime logs in seconds — no ClassCloud log fetch.
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # Publish to Vercel
@@ -20,8 +23,11 @@ metadata:
 The Vercel route for a kit app. The app's own `index.html` is left as it is;
 `vercel_build.py` turns it into a **slim page** (a few KB) that loads the kit's
 plumbing from a hosted, versioned **shared library** and A-Frame from aframe.io.
-Only the slim page is sent to Vercel on each publish, through the Vercel
-connector's `deploy_to_vercel` tool. Production deploys are public, live at
+The page also loads `kit-relay.js`, which posts the app's diary to `/api/log`
+in the same project; that tiny function prints each post into the project's
+runtime log, where the connector reads it back (see "Reading what happened").
+The three files are sent to Vercel on each publish through the connector's
+`deploy_to_vercel` tool. Production deploys are public, live at
 once, and always at the same address, so one QR code stays valid for the life
 of the app. Tested on desktop and on a ClassVR headset (Wolvic), 17 Sep 2026.
 
@@ -87,8 +93,10 @@ is **not** uploaded here (ClassCloud and Pages use it); leave it.
         "<project>" --out "<scratch>/dist-vercel"
 
 Build into a scratch directory, not the app folder (nothing here belongs in a
-repo). It writes `page/index.html` (the slim page), `lib/*` (the four library
-files for this template version) and `manifest.json`. Read the manifest: `kit`
+repo). It writes the **deploy set** under `page/` — `index.html` (the slim
+page), `kit-relay.js` (posts the diary) and `api/log.js` (receives it) —
+plus `lib/*` (the four library files for this template version) and
+`manifest.json`. Read the manifest: `deploy` (the file list), `kit`
 (12-hex library version — a hash of the plumbing, so every app made from the
 same template shares it), `libBase` (`https://xr-kit-lib-<kit>.vercel.app`),
 `aframe`, `extraLibs`, and the sha256 of every file.
@@ -132,12 +140,16 @@ use it; several → ask once which). Project name: `vercel.project` if set,
 else the manifest `slug` (e.g. `bubble-pop`).
 
     deploy_to_vercel  target = "production"   name = <project>   teamId = <team>
-                      files = [ { file: "index.html", data: <page/index.html> } ]
+                      files = [ { file: "index.html",  data: <page/index.html> },
+                                { file: "kit-relay.js", data: <page/kit-relay.js> },
+                                { file: "api/log.js",   data: <page/api/log.js> } ]
 
 **Always `production`** — preview deployments sit behind a Vercel login and a
-headset cannot open them. **Always send the complete file set** — a deploy
-replaces everything in the project, so omitting `index.html` takes the page
-down. A static page is `READY` at once.
+headset cannot open them. **Always send the complete file set** (every name
+in the manifest's `deploy` list) — a deploy replaces everything in the
+project, so a file left out is gone from the live site. With the function
+present the deploy is `INITIALIZING` for ~10–30 s; poll `get_deployment`
+until `READY` before verifying.
 
 Then `get_deployment` with the returned id and read `alias`. The stable public
 address is the alias **without** a hash: prefer `<project>.vercel.app`; if it
@@ -145,14 +157,15 @@ is not listed (name taken globally) use `<project>-<team-slug>.vercel.app`.
 Never hand out the per-deployment URL (`<project>-<hash>-…`): it is protected.
 
 Record with `manifest.py --project "<project>" --set …`: `vercel.project`,
-`vercel.url` (with `https://`), `vercel.deploymentId`, `vercel.build=<N>`,
-`vercel.teamId`, `vercel.lib=<kit>`, and on a first publish
-`vercel.owner="<user's email>"`.
+`vercel.projectId` (`project.id` from `get_deployment`, `prj_…`), `vercel.url`
+(with `https://`), `vercel.deploymentId`, `vercel.build=<N>`, `vercel.teamId`,
+`vercel.lib=<kit>`, and on a first publish `vercel.owner="<user's email>"`.
 
 ### 7. Verify the live page
 
 `web_fetch_vercel_url` on `vercel.url`: the text must contain
-`window.BUILD = <N>;` and the four `<libBase>/xr-kit-…` references. If the
+`window.BUILD = <N>;`, `./kit-relay.js` and the four `<libBase>/xr-kit-…`
+references. If the
 browser pane is available, also open `vercel.url?kitcheck` and read
 `window.KIT.report()` and `window.KIT.checkResults`: scene loaded, 0 errors,
 the Enter VR button present (`.a-enter-vr-button`). The "player can walk
@@ -191,20 +204,42 @@ numbers unless asked.
 - **Combined create-and-host** ("make X, host it on Vercel"): `/new-xr-app`
   1–6, then this skill 1–9 in one turn; the QR is the last thing shown.
 
-## Debugging an app on this route
+## Reading what happened (debugging on this route)
 
-- `/check-headset` works unchanged: the diary and its logbook are in the
-  shared library, so headset plays still land in the ClassCloud log. The page
-  URL is on `vercel.app`, so `headset_diary.py` must match sessions on the
-  diary's own `app`/`b` fields, not on an `avnfs.com` URL.
-- The Vercel connector's `get_runtime_logs` shows **nothing** for these pages:
-  runtime logs are server-side function output only. A universal `/api/log`
-  receiver (one route for headset, desktop and shared link, read with
-  `get_runtime_logs`) was proved separately and is a later kit change, not
-  part of this skill.
-- Error codes: an error in the app's own code keeps its `<build>-<line>` code
-  with the line counted in the slim page; an error inside the shared library
-  is coded `<build>-lib`.
+Whenever the user asks what went wrong, whether it worked, what happened on
+the headset, or before fixing a bug someone reported — for an app with
+`vercel.url` — read the diary **from Vercel first**; it is the same for a
+headset, a desktop browser and a shared link, and arrives within seconds of
+the play (`/check-headset` does this itself when it sees `vercel.url`):
+
+    get_runtime_logs  projectId = vercel.projectId  teamId = vercel.teamId
+                      deploymentId = vercel.deploymentId   since = "1h"
+                      query = "kit-diary"   (add level = ["error"] for errors only)
+
+Always scope to the deployment id — a project-wide query can time out. Each
+line is one post from `kit-relay.js`: `session`, `app`, `build`, `k` (why it
+was sent: `start`, `checks`, `vr`, `flag`, `error`, `beat`, `end`), `t`
+seconds running, `st` state, `vr`/`ev` presenting now / ever, `fps`, `c`
+controllers, `p` presses, `tn` turns, `e`/`f` error and flag counts,
+`firstCode`, `dof`/`lk` (3DoF lock), and `d` — the diary entries added since
+the previous post as `[i, t, kind, text, code?]`, which includes everything
+the app printed. The `ua` says which device: `Android … Mobile VR` is the
+headset (Wolvic), a desktop UA is a browser. `get_runtime_errors` gives a
+clustered first look at errors across sessions.
+
+Then tell the story exactly as `/check-headset` step 6 describes (build,
+entered VR, errors first with their codes and lines, the seconds before a
+flag, or the numbers that show it ran well). Ignore a `flag` post whose `d`
+ends in `PASS the "something wrong" marker works` — that is the self-check
+pressing F during `?kitcheck`, not a person.
+
+Retention is Vercel's runtime-log window: **1 hour on Hobby, 1 day on Pro**.
+Nothing there → say so and fall back to the ClassCloud log
+(`/check-headset` steps 2–4), which still works: the diary's logbook is in
+the shared library too. Error codes: an error in the app's own code keeps its
+`<build>-<line>` code with the line counted in the slim page (open
+`dist-vercel/page/index.html` from the build, or rebuild it); an error inside
+the shared library is coded `<build>-lib`.
 
 ## Known limits
 
@@ -213,6 +248,8 @@ numbers unless asked.
 - The QR is a PNG in the chat and the app folder; it is not yet drawn on the
   page itself the way the Pages site builder does it.
 - Vercel's free Hobby plan is for non-commercial personal use (100 deploys a
-  day); staff use belongs on a Pro team. Runtime-log retention is 1 hour on
-  Hobby, 1 day on Pro — irrelevant to this skill, relevant to the later
-  `/api/log` work.
+  day); staff use belongs on a Pro team. Diary retention follows the
+  runtime-log window: 1 hour on Hobby, 1 day on Pro (longer needs the Blob
+  store variant tested in the project notes, not included here).
+- `/api/log` accepts posts from anyone who knows the address (the page is
+  public); the diary carries no personal data by construction.

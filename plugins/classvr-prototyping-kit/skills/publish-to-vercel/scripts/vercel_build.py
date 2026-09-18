@@ -10,8 +10,10 @@ Second build output for a kit app, alongside build.py's single file:
               xr-kit-<ver>.css        panel + reticle styles
               xr-kit-<ver>.js         xr-kit / checker-ground components
               xr-kit-panel-<ver>.js   status panel (runs after the scene)
-  * page/ — a slim index.html for THIS app that loads those files and
-            A-Frame from URLs. Only this file changes per publish.
+  * page/ — the deploy set for THIS app: a slim index.html that loads those
+            files and A-Frame from URLs, kit-relay.js (posts the app's diary
+            to /api/log so the Vercel connector can read it back) and
+            api/log.js (the receiver). Only index.html changes per publish.
 
 Nothing in the app's source changes. The plumbing blocks are found by the
 same markers the template already carries (the diary's `window.KIT =`, the
@@ -49,7 +51,9 @@ def main():
                     help="library version label; 'auto' = 12-hex hash of the extracted plumbing, so any app maps to exactly the files built from its own template")
     ap.add_argument('--aframe', default='auto', help="A-Frame release to load from aframe.io; 'auto' reads it from the app's bundled aframe.min.js")
     ap.add_argument('--out', default=None)
+    ap.add_argument('--no-relay', action='store_true', help='leave out kit-relay.js and api/log.js (static page only)')
     a = ap.parse_args()
+    ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets')
 
     src = open(os.path.join(a.app, 'index.html'), encoding='utf-8').read()
     manifest = json.load(open(os.path.join(a.app, 'xr-project.json'), encoding='utf-8'))
@@ -101,17 +105,26 @@ def main():
     page = page[:xrkit.start()] + '<script src="%s/xr-kit-%s.js"></script>' % (L, v) + page[xrkit.end():]
     page = page[:style.start()] + '<link rel="stylesheet" href="%s/xr-kit-%s.css">' % (L, v) + page[style.end():]
     page = page[:aframe_tag.start()] + '<script src="https://aframe.io/releases/%s/aframe.min.js"></script>' % a.aframe + page[aframe_tag.end():]
-    page = page[:diary.start()] + '<script src="%s/xr-kit-diary-%s.js"></script>' % (L, v) + page[diary.end():]
+    relay_tag = '' if a.no_relay else '\n<script src="./kit-relay.js"></script>'
+    page = page[:diary.start()] + '<script src="%s/xr-kit-diary-%s.js"></script>' % (L, v) + relay_tag + page[diary.end():]
     # any other bundled library (cannon.iife.js, ...) must be hosted beside the
     # kit files; point at it there and list it so the publish step can check
     extra_libs = []
     def relib(m):
         extra_libs.append(m.group(1)); return '<script src="%s/%s"></script>' % (L, m.group(1))
-    page = re.sub(r'<script src="\./([^"]+\.js)"></script>', relib, page)
+    page = re.sub(r'<script src="\./(?!kit-relay\.js)([^"]+\.js)"></script>', relib, page)
     page = re.sub(r'<!-- Libraries are bundled beside this file, never loaded from a CDN\. -->',
                   '<!-- Vercel build: kit %s from %s, A-Frame %s from aframe.io -->' % (v, L, a.aframe), page)
     page = re.sub(r'window\.BUILD = \d+;', 'window.BUILD = %d;' % build, page)
     open(os.path.join(out, 'page', 'index.html'), 'w', encoding='utf-8', newline='\n').write(page)
+    deploy = {'index.html': page}
+    if not a.no_relay:
+        import shutil
+        os.makedirs(os.path.join(out, 'page', 'api'), exist_ok=True)
+        shutil.copyfile(os.path.join(ASSETS, 'kit-relay.js'), os.path.join(out, 'page', 'kit-relay.js'))
+        shutil.copyfile(os.path.join(ASSETS, 'api-log.js'), os.path.join(out, 'page', 'api', 'log.js'))
+        deploy['kit-relay.js'] = open(os.path.join(ASSETS, 'kit-relay.js'), encoding='utf-8').read()
+        deploy['api/log.js'] = open(os.path.join(ASSETS, 'api-log.js'), encoding='utf-8').read()
 
     # 4. report + a manifest a publish step can verify the hosted copies against
     def kb(s): return '%.1f KB' % (len(s.encode('utf-8')) / 1024)
@@ -121,9 +134,11 @@ def main():
         h = hashlib.sha256(text.encode('utf-8')).hexdigest()
         manifest_out['files']['lib/' + name] = {'bytes': len(text.encode('utf-8')), 'sha256': h}
         print('lib/%-26s %s  sha256 %s' % (name, kb(text), h[:12]))
-    h = hashlib.sha256(page.encode('utf-8')).hexdigest()
-    manifest_out['files']['page/index.html'] = {'bytes': len(page.encode('utf-8')), 'sha256': h}
-    print('page/index.html', kb(page), '(build %s, kit lib %s, A-Frame %s)' % (build, v, a.aframe))
+    manifest_out['deploy'] = sorted(deploy)                     # the complete file set deploy_to_vercel must receive
+    for name, text in deploy.items():
+        h = hashlib.sha256(text.encode('utf-8')).hexdigest()
+        manifest_out['files']['page/' + name] = {'bytes': len(text.encode('utf-8')), 'sha256': h}
+        print('page/%-26s %s' % (name, kb(text)) + ('  (build %s, kit lib %s, A-Frame %s)' % (build, v, a.aframe) if name == 'index.html' else ''))
     if extra_libs: print('extra libraries to host at', L + ':', ', '.join(extra_libs))
     json.dump(manifest_out, open(os.path.join(out, 'manifest.json'), 'w', encoding='utf-8'), indent=2)
 

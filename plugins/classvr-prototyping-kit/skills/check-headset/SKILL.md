@@ -24,6 +24,21 @@ Then — if something broke — the fix, exactly as `xr-app-rules` describes.
 
 ## Steps
 
+### 0. An app on Vercel: read the diary there first
+
+If `xr-project.json` has `vercel.url`, the app posts its diary to its own
+Vercel project as it runs — from the headset, a desktop browser or a shared
+link alike — and the Vercel connector reads it back in seconds, with no log
+request and no need for the headset to be on its home screen. Do this first,
+as `/publish-to-vercel` ("Reading what happened") describes:
+`get_runtime_logs` with `projectId` = `vercel.projectId`, `teamId` =
+`vercel.teamId`, `deploymentId` = `vercel.deploymentId`, `since` = `"1h"`,
+`query` = `"kit-diary"`. The headset shows as an `Android … Mobile VR` user
+agent. If sessions are there, go straight to step 6 with them. If nothing is
+there (the play was more than an hour ago on Vercel's free plan, or the
+connector is off in this chat), say so in one line and continue with the
+ClassCloud log below — it still works for these apps.
+
 ### 1. Which app, which headset
 
 Find the project folder (`xr-project.json`). Read `classcloud.organizationId`
