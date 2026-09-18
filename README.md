@@ -68,7 +68,7 @@ them something changed.
 
 ## Status
 
-Version 0.21.0, September 2026. Built and tested against the ClassVR Xcelerate
+Version 0.22.0, September 2026 (adds the opt-in Vercel route, `/publish-to-vercel`). Built and tested against the ClassVR Xcelerate
 headset (Wolvic browser). Prototypes made with the kit are ordinary
 HTML pages. In a GitHub repository the kit publishes them to GitHub Pages on
 every change (the `share-xr-app` skill installs the workflow); outside a repo it

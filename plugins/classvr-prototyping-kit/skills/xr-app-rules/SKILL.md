@@ -431,7 +431,9 @@ Every edit to `index.html` ends the same way, in this order:
    by the skill, without asking, unless the user said to hold; the Pages URL
    shows the change a couple of minutes later. A turn that ends "saved on
    your branch, press Create PR…" has skipped this step;
-   elsewhere the app's artifact is updated in place. Either way the user — and
+   elsewhere the app's artifact is updated in place; an app that lives on
+   Vercel (`vercel.url` in the manifest) is republished with
+   `/publish-to-vercel` — live in seconds, no cache to wait out. Either way the user — and
    anyone they've shared the link with — sees the change by reloading. The
    build number bumps, and it's what confirms they're looking at the new
    version. If the manifest has no link yet (an app made before links
@@ -440,6 +442,6 @@ Every edit to `index.html` ends the same way, in this order:
    commit is the write-back).
 
 The link is the last thing on screen in an edit turn: the Pages URL on its own
-line, or the artifact card. One sentence about what changed, then "reload the
+line, the artifact card, or (Vercel) the URL and the QR code. One sentence about what changed, then "reload the
 link to see it" (on a branch: "once it's merged"). Never render `preview.png`
 in an edit turn.

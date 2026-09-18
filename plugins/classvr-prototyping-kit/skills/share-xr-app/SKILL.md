@@ -3,7 +3,7 @@ name: share-xr-app
 description: >
   This skill should be used when the user asks to "share my XR app", "give me a link
   to the app", "put it on GitHub Pages", "publish the web page", "put it in an
-  artifact", "update the artifact", "refresh the link", "make the link show the
+  artifact", "refresh the Vercel page", "update the artifact", "refresh the link", "make the link show the
   latest version", or invokes /share-xr-app. It builds the app, verifies it, and
   puts it on a permanent link: a GitHub Pages URL when the app lives in a GitHub
   repository (the normal case in Claude Code), otherwise a Claude Artifact. It is
@@ -11,7 +11,7 @@ description: >
   app, so the link is never behind the folder, and it always ends by putting the
   link in the chat.
 metadata:
-  version: "0.5.0"
+  version: "0.6.0"
 ---
 
 # Share XR app
@@ -27,8 +27,12 @@ There are two kinds of link, and **where the app lives decides which**:
 |---|---|---|---|
 | inside a git repository with a GitHub remote | **A — GitHub Pages** | `https://<owner>.github.io/<repo>/<slug>/` | **Yes** — a plain HTTPS page; the page shows its own QR code for the headset to scan |
 | a plain folder (Cowork, a local session, no repo) | **B — Claude Artifact** | `https://claude.ai/…/artifact/…` | No — the viewer's frame blocks WebXR |
+| anywhere, when the user has chosen **Vercel** (or the manifest already has `vercel.url`) | **C — Vercel** (`/publish-to-vercel`) | `https://<project>.vercel.app` | **Yes** — a plain HTTPS page, published through the Vercel connector; the QR code is rendered in the chat |
 
-Route A is preferred whenever it is available. The headset route through
+Route A is preferred whenever it is available. Route C is opt-in: it needs the
+Vercel connector on in the chat, and is chosen only when the user names
+Vercel or the app has been published there before — then it replaces both A
+and B for that app, and `/publish-to-vercel` carries the whole flow. The headset route through
 ClassCloud (`/publish-xr-app`) still exists and shares the same build numbers;
 with a Pages link it becomes optional — useful when someone wants the app in a
 ClassCloud playlist, not needed just to get it onto a headset.
@@ -54,8 +58,11 @@ The folder with `index.html` and `xr-project.json`. Then, from inside it:
     git rev-parse --show-toplevel        # repo root, or an error if not a repo
     git remote get-url origin            # https://github.com/<owner>/<repo>(.git)
 
-Both succeed and the remote is on `github.com` → **route A**. Anything else
-(not a repo, no remote, a non-GitHub host, or `git` unavailable) → **route B**.
+**First**, if `xr-project.json` has `vercel.url`, or the user asked for Vercel
+in this turn → **route C**: stop here and run `/publish-to-vercel` (it does
+its own build, verify and write-back). Otherwise: both succeed and the remote
+is on `github.com` → **route A**. Anything else (not a repo, no remote, a
+non-GitHub host, or `git` unavailable) → **route B**.
 In a Cowork session with a connected folder, stage `index.html`, every local
 `<script src="./…">` it references, and `xr-project.json` into the workspace
 with the same layout first; scripts take that staged folder as `--project`.

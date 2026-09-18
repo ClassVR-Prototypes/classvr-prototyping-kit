@@ -10,7 +10,7 @@ description: >
   builds a minimal playable version of the chosen one. No terminal, no libraries to
   install.
 metadata:
-  version: "0.4.0"
+  version: "0.5.0"
 ---
 
 # New XR app
@@ -175,7 +175,10 @@ from the start position. If they aren't, move them, don't ship it.
 
 Run `/share-xr-app` from its step 1 (route choice) — the build and preview
 check are already done, so skip its steps 2–3. Where the app lives decides the
-kind of link:
+kind of link — unless the request **named Vercel** as the host ("make X,
+hosted on Vercel", "…and put it on Vercel"): then it is **route C**, deliver
+the project files to the user's folder and run `/publish-to-vercel` from its
+step 3; make no artifact and no Pages commit for it. Otherwise:
 
 - **Inside a GitHub repository** (Claude Code, a cloned repo): **route A,
   GitHub Pages.** Commit the new folder, push, and the app gets a public URL
@@ -211,6 +214,8 @@ manifests, artifacts, git, or build numbers unless asked.
   Pages setting — say so if the share skill just added the workflows.
 - Route B: the artifact card is the last thing the turn produces; don't paste
   the URL as well.
+- Route C: the Vercel URL on its own line, then the QR code rendered **last**;
+  "scan it on the headset and press the VR button" — it is live at once.
 
 Do **not** render `preview.png` in either case — a screenshot would only push
 the link away. Project files are attached, not rendered.

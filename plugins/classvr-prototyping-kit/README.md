@@ -9,6 +9,7 @@ Four things you can say:
 |---|---|
 | **"Make a new VR app called Planet Walk"** (`/new-xr-app`) | A folder appears with a working scene — checked green ground, blue sky, a VR rig with controllers, thumbstick movement and snap-turn — and the app opens on screen as a Claude Artifact with its own permanent link. Right-click and drag to look around, left-click presses; WASD moves, Q/E turn. If the name sounds like a game ("Bubble Pop") and you didn't say what it does, you're offered a few concepts — or the empty scene — and the one you pick is built as a first playable version. |
 | **"Share it" / "refresh the link"** (`/share-xr-app`) | The app is rebuilt, checked, and its link updated. In a GitHub repository (Claude Code) the link is a public **GitHub Pages** URL, which also works for Enter VR on a headset; elsewhere it is a Claude Artifact. Runs on its own after every edit, so the link is never behind, and the URL is put in the chat. |
+| **"Host it on Vercel"** (`/publish-to-vercel`) | Opt-in third kind of link, for Cowork sessions with the **Vercel connector** on: the app is rebuilt as a small page that loads the kit's plumbing from a shared, versioned library, deployed to `https://<app>.vercel.app` through the connector — no Git, no upload screen — verified live, and you get a QR code. Enter VR works on a headset; updates are live in seconds. Say it when you create the app ("…hosted on Vercel") or any time after. |
 | **"Show me"** (`/preview-xr-app`) | The app is loaded in a headless browser and checked for errors. You get a screenshot and a one-line health report. |
 | **"Put it on the headset"** (`/publish-xr-app`) | The app is verified, uploaded to ClassCloud, filed under your organisation's **XR Prototypes** playlist, and you get a QR code. Scan it on the headset. Re-publish as often as you like — the QR never changes. |
 
@@ -25,6 +26,8 @@ skills/
   preview-xr-app/    headless load + error check + screenshot
   share-xr-app/      build → verify → GitHub Pages (in a repo) or Claude Artifact, on a permanent link
     assets/pages/                    the Pages workflow + site builder the kit installs in a repo
+  publish-to-vercel/ build a slim page + shared library → deploy through the Vercel connector → QR
+    scripts/vercel_build.py          extracts the kit's plumbing from an app into versioned library files
   publish-xr-app/    build → verify → upload → playlist → QR
   check-headset/     after a play on a headset: fetch its log, read the app's diary
   xr-app-rules/      the constraints, applied on every edit
@@ -42,8 +45,8 @@ is left short of `main`, unless the latest commit is marked `[hold]`. It is what
 makes "your change is live" reliable rather than usual.
 
 Each skill carries the scripts it needs (`scaffold.py`, `build.py`,
-`preview.py`, `artifact.py`, `publish_pr.py`, `upload.py`, `make_qr.py`, `manifest.py`,
-`headset_diary.py`). Claude
+`preview.py`, `artifact.py`, `publish_pr.py`, `vercel_build.py`, `upload.py`, `make_qr.py`,
+`manifest.py`, `headset_diary.py`). Claude
 runs them; you never see them. Every project has an `xr-project.json` manifest
 recording its build number, its artifact URL and its ClassCloud ids, which is
 what makes re-sharing and re-publishing an update rather than a duplicate.
@@ -197,3 +200,11 @@ rotation kept, give and cap exact) and press a pretend trigger on the desktop.
   The same frame refuses pointer lock, so the kit supplies its own click-once
   mouse look there (Esc stops it). The camera pauses while the cursor is off
   the page; fullscreen avoids that.
+- The Vercel route is a prototype (see `6 - Vercel Hosting/OVERVIEW.md` in the
+  project for the tests behind it). It needs the Vercel connector in the chat
+  and a Vercel login; Vercel's free Hobby plan is for non-commercial personal
+  use, so staff use belongs on a Pro team. Apps that bundle an extra library
+  (`cannon.iife.js`) are not supported on it yet; the QR is a PNG in the chat
+  and the app folder, not yet drawn on the page; the kit's plumbing must be
+  hosted once per template version (`xr-kit-lib-<hash>` projects) — the skill
+  does that itself when it finds it missing, but the upload is the slow step.
