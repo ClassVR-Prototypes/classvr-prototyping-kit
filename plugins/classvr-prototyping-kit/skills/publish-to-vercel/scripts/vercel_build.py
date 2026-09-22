@@ -25,12 +25,31 @@ same markers the template already carries (the diary's `window.KIT =`, the
 xr-kit banner, `#kit-panel`, "Status panel"), so the hosted library is
 always generated from the template — never hand-edited.
 
+Version history (kit 0.25). Every publish is also a *version*: the build
+records the page's SHA-1 fingerprint, size, date and a one-line note under
+`vercel.versions` in xr-project.json, and writes into the deploy set
+
+  history.json          the list, machine-readable, public
+  history/index.html    the same list as a page: /history
+  v/<N>/index.html      every version, playable forever at /v/<N>/
+
+Only the newest page travels in the publish (twice: as index.html and as
+v/<N>/index.html). Every older v/<M>/index.html is listed in the manifest by
+fingerprint alone — Vercel already holds those bytes from the publish that
+first sent them — so a history of fifty versions costs the same to publish
+as one. "Go back to version 4" is an ordinary publish whose source is the
+page fetched from /v/4/ (unslimmed back into index.html) with
+`--restored-from 4`; nothing is ever deleted. `--note` is the plain-English
+"what changed" line; without it the note is "Version N" (or the note already
+recorded for that build).
+
 Usage:
   vercel_build.py <app folder> [--lib-base https://…] [--kit-version auto|label]
                   [--aframe auto|X.Y.Z] [--out <dir>] [--no-relay] [--indexable]
+                  [--note "what changed"] [--restored-from N] [--no-history]
 
   vercel_build.py --unslim <published index.html> --lib-dir <dir> --out <file>
-                  [--aframe-file aframe.min.js]
+                  [--expect-sha1 <40 hex>]
 
 Library versions are content-addressed (12-hex hash of the extracted plumbing)
 and each lives in its own Vercel project, xr-kit-lib-<version>, so a new
@@ -44,10 +63,135 @@ building on it (/copy-xr-app). The result differs from the original in one
 harmless way: the status panel reads the app's name from the page title
 instead of carrying it as a literal.
 """
-import argparse, hashlib, json, os, re, shutil, sys
+import argparse, datetime, hashlib, html as htmlmod, json, os, re, shutil, sys
 
 SOURCE_META = 'xr-kit-source'
 BUNDLED_COMMENT = '<!-- Libraries are bundled beside this file, never loaded from a CDN. -->'
+HISTORY_JSON = 'history.json'
+HISTORY_PAGE = 'history/index.html'
+
+
+def now_iso():
+    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+
+
+def version_path(n):
+    return 'v/%d/index.html' % n
+
+
+def record_version(manifest, build_no, sha1, size, note, restored_from):
+    """Add or refresh the entry for this build in manifest['vercel']['versions'].
+
+    Re-running the build for the same build number (a failed publish, an
+    unchanged source) replaces that entry rather than adding a second one, so
+    the list always has one entry per build, in build order."""
+    vc = manifest.setdefault('vercel', {})
+    versions = [v for v in (vc.get('versions') or []) if isinstance(v, dict) and 'version' in v]
+    existing = next((v for v in versions if v['version'] == build_no), None)
+    entry = {
+        'version': build_no,
+        'date': now_iso(),
+        'note': note or (existing or {}).get('note') or ('First version' if build_no <= 1 else 'Version %d' % build_no),
+        'sha1': sha1,
+        'size': size,
+    }
+    rf = restored_from if restored_from is not None else (existing or {}).get('restoredFrom')
+    if rf is not None:
+        entry['restoredFrom'] = rf
+    if existing:
+        versions[versions.index(existing)] = entry
+    else:
+        versions.append(entry)
+    versions.sort(key=lambda v: v['version'])
+    vc['versions'] = versions
+    return versions
+
+
+def history_document(manifest, versions):
+    """The public history.json. Deliberately carries no names or e-mail
+    addresses: version, date, note, fingerprint, size, and where a copy came
+    from (address and version only)."""
+    vc = manifest.get('vercel') or {}
+    doc = {
+        'kit': 'classvr-prototyping-kit',
+        'format': 1,
+        'app': manifest.get('name'),
+        'slug': manifest.get('slug'),
+        'url': vc.get('url'),
+        'current': versions[-1]['version'] if versions else None,
+        'versions': [dict(v, path='v/%d/' % v['version']) for v in versions],
+    }
+    ff = manifest.get('forkedFrom') or manifest.get('copiedFrom')
+    if isinstance(ff, dict) and ff.get('url'):
+        cf = {'url': ff['url']}
+        for k in ('version', 'build', 'sha1'):
+            if ff.get(k) is not None:
+                cf['version' if k == 'build' else k] = ff[k]
+        doc['copiedFrom'] = cf
+    return doc
+
+
+def history_page(doc):
+    """A small static page listing the versions, generated fresh on every
+    publish. It embeds the same data history.json carries, so it needs no
+    fetch and works from a file as well as from the live address."""
+    e = htmlmod.escape
+    app = doc.get('app') or doc.get('slug') or 'this app'
+    rows = []
+    for v in reversed(doc['versions']):
+        tags = []
+        if v['version'] == doc.get('current'):
+            tags.append('<span class="tag now">current</span>')
+        if v.get('restoredFrom') is not None:
+            tags.append('<span class="tag">restored from version %d</span>' % v['restoredFrom'])
+        rows.append(
+            '<li><a class="ver" href="/v/%d/">Version %d</a> %s<div class="note">%s</div>'
+            '<div class="meta"><time datetime="%s">%s</time> · fingerprint <code title="%s">%s</code> · %s</div></li>'
+            % (v['version'], v['version'], ''.join(tags), e(v.get('note') or ''), e(v.get('date', '')),
+               e(v.get('date', '')[:10]), e(v.get('sha1', '')), e(v.get('sha1', '')[:8]),
+               '<a href="/v/%d/">play</a>' % v['version']))
+    url = doc.get('url') or ''
+    copy_hint = (e(url.rstrip('/')) + ' version N') if url else 'this address, version N'
+    return '''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>%(app)s — history</title>
+<style>
+:root { --bg:#f7f7f5; --fg:#1e1e1e; --muted:#6b6b6b; --card:#fff; --line:#e3e3e0; --accent:#2b6cb0; --now:#2f855a; }
+@media (prefers-color-scheme: dark) { :root { --bg:#141414; --fg:#ececec; --muted:#a0a0a0; --card:#1e1e1e; --line:#2c2c2c; --accent:#7fb3ff; --now:#7bd39a; } }
+body { margin:0; padding:24px 16px 48px; background:var(--bg); color:var(--fg); font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+main { max-width:680px; margin:0 auto; }
+h1 { font-size:1.4rem; margin:0 0 4px; } h1 small { font-weight:normal; color:var(--muted); }
+p.lead { color:var(--muted); margin:0 0 20px; }
+ol { list-style:none; padding:0; margin:0; }
+li { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin:0 0 10px; }
+a { color:var(--accent); } a.ver { font-weight:600; text-decoration:none; font-size:1.05rem; }
+.note { margin:4px 0 6px; } .meta { color:var(--muted); font-size:.9rem; }
+code { font:.9em ui-monospace,Menlo,Consolas,monospace; background:var(--bg); padding:1px 5px; border-radius:4px; }
+.tag { display:inline-block; font-size:.75rem; padding:1px 8px; border-radius:999px; border:1px solid var(--line); color:var(--muted); margin-left:6px; vertical-align:middle; }
+.tag.now { color:var(--now); border-color:var(--now); }
+aside { margin-top:28px; padding:14px 16px; border-left:3px solid var(--accent); color:var(--muted); font-size:.95rem; }
+aside b { color:var(--fg); }
+</style>
+</head>
+<body>
+<main>
+<h1>%(app)s <small>— every version</small></h1>
+<p class="lead">Each version stays playable at its own address. <a href="/">Open the current version</a>.</p>
+<ol>
+%(rows)s
+</ol>
+<aside>
+<b>Want your own copy?</b> Ask Claude: “make me my own copy of %(copy)s”. You get an independent copy to change however you like; this one is untouched.<br>
+<b>Fingerprint</b> is the first eight characters of the page's SHA-1 — two people quoting the same fingerprint are looking at exactly the same version. The full list is at <a href="/history.json">history.json</a>.
+</aside>
+</main>
+</body>
+</html>
+''' % {'app': e(app), 'rows': '\n'.join(rows), 'copy': copy_hint}
 
 
 def find_block(html, tag, must_contain, start_at=0):
@@ -147,6 +291,26 @@ def build(a):
     #    bytes on every publish of every app, which is what lets a publish
     #    send them by SHA rather than re-uploading them.
     deploy = {'index.html': page}
+    by_fingerprint = {}                 # path -> (sha1, size): older versions, never re-sent
+    versions = []
+    if not a.no_history:
+        # 4a. version history: this page becomes v/<build>/, older builds are
+        #     listed by fingerprint, and the list is written as JSON + a page
+        page_sha1, page_size = sha1_bytes(page)
+        versions = record_version(manifest, build_no, page_sha1, page_size, a.note, a.restored_from)
+        json.dump(manifest, open(os.path.join(a.app, 'xr-project.json'), 'w', encoding='utf-8'), indent=2)
+        open(os.path.join(a.app, 'xr-project.json'), 'a').write('\n')
+        doc = history_document(manifest, versions)
+        deploy[version_path(build_no)] = page
+        for old in versions:
+            if old['version'] != build_no:
+                by_fingerprint[version_path(old['version'])] = (old['sha1'], old['size'])
+        deploy[HISTORY_JSON] = json.dumps(doc, indent=2) + '\n'
+        deploy[HISTORY_PAGE] = history_page(doc)
+        for name in (version_path(build_no), HISTORY_JSON, HISTORY_PAGE):
+            dest = os.path.join(out, 'page', name)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            open(dest, 'w', encoding='utf-8', newline='\n').write(deploy[name])
     fixed = []
     if not a.no_relay:
         fixed += [('kit-relay.js', 'kit-relay.js'), ('api/log.js', 'api-log.js'),
@@ -170,16 +334,32 @@ def build(a):
         s1, n = sha1_bytes(text)
         out_man['files']['lib/' + name] = {'bytes': n, 'sha256': h, 'sha1': s1}
         print('lib/%-26s %s  sha256 %s' % (name, kb(text), h[:12]))
-    out_man['deploy'] = sorted(deploy)          # the complete file set the deploy tool must receive
+    # the complete file set the deploy tool must receive: everything written
+    # under page/ plus every older version, which travels by fingerprint only
+    out_man['deploy'] = sorted(list(deploy) + list(by_fingerprint))
     out_man['deployFiles'] = {}
+    # the page itself and its v/<N>/ twin change every build and are sent
+    # inline (a fingerprint can only be referenced once Vercel has the bytes,
+    # so a file new in this publish cannot be sent by sha — verified 22 Sep);
+    # history.json and the history page change too; everything else is
+    # byte-identical across publishes and goes by sha after the first time
+    inline_names = {'index.html', HISTORY_JSON, HISTORY_PAGE, version_path(build_no)}
     for name in sorted(deploy):
         text = deploy[name]
         s1, n = sha1_bytes(text)
         out_man['files']['page/' + name] = {'bytes': n, 'sha256': hashlib.sha256(text.encode('utf-8')).hexdigest(), 'sha1': s1}
-        # inline the page itself (it changes every build); the rest never
-        # change, so a publish after the first can reference them by sha
-        out_man['deployFiles'][name] = {'sha1': s1, 'size': n, 'reusable': name != 'index.html'}
+        out_man['deployFiles'][name] = {'sha1': s1, 'size': n, 'reusable': name not in inline_names}
         print('page/%-26s %s' % (name, kb(text)) + ('  (build %s, kit lib %s, A-Frame %s)' % (build_no, v, a.aframe) if name == 'index.html' else ''))
+    for name, (s1, n) in sorted(by_fingerprint.items()):
+        out_man['deployFiles'][name] = {'sha1': s1, 'size': n, 'reusable': True, 'byFingerprint': True}
+        print('page/%-26s %s  (by fingerprint %s — not re-sent)' % (name, '%.1f KB' % (n / 1024), s1[:8]))
+    if versions:
+        cur = versions[-1]
+        out_man['history'] = {'current': cur['version'], 'note': cur['note'], 'sha1': cur['sha1'],
+                              'fingerprint': cur['sha1'][:8], 'count': len(versions),
+                              'restoredFrom': cur.get('restoredFrom')}
+        print('version %d — "%s" — fingerprint %s (%d version%s in the history)'
+              % (cur['version'], cur['note'], cur['sha1'][:8], len(versions), '' if len(versions) == 1 else 's'))
     if extra_libs: print('extra libraries to host at', L + ':', ', '.join(extra_libs))
     json.dump(out_man, open(os.path.join(out, 'manifest.json'), 'w', encoding='utf-8'), indent=2)
 
@@ -188,6 +368,10 @@ def build(a):
 
 def unslim(a):
     page = open(a.unslim, encoding='utf-8').read()
+    fetched_sha1, fetched_size = sha1_bytes(page)
+    if a.expect_sha1 and fetched_sha1.lower() != a.expect_sha1.lower():
+        raise SystemExit('fingerprint mismatch: the fetched page is %s but the history says %s — '
+                         'fetch it again before copying' % (fetched_sha1[:8], a.expect_sha1[:8]))
     m = re.search(r'<meta name="%s" content="([^"]*)">\s*' % SOURCE_META, page)
     info = {}
     if m:
@@ -238,6 +422,7 @@ def unslim(a):
     print(json.dumps({'ok': True, 'out': a.out, 'kit': ver, 'name': (title.group(1).strip() if title else None),
                       'build': int(info.get('build', 0) or 0), 'slug': info.get('slug'),
                       'aframe': info.get('aframe'), 'libBase': info.get('lib'),
+                      'publishedSha1': fetched_sha1, 'fingerprint': fetched_sha1[:8], 'publishedBytes': fetched_size,
                       'bytes': len(page.encode('utf-8'))}, indent=2))
 
 
@@ -256,6 +441,12 @@ def main():
     ap.add_argument('--unslim', metavar='PAGE', default=None,
                     help='inverse: rebuild an app\'s source index.html from a page this script published')
     ap.add_argument('--lib-dir', default=None, help='with --unslim: folder holding the xr-kit-*.js/.css files the page names')
+    ap.add_argument('--expect-sha1', default=None, metavar='HEX',
+                    help='with --unslim: the fingerprint history.json gives for this version; stop if the fetched page does not match it')
+    ap.add_argument('--note', default=None, help='one plain-English line saying what changed in this version (goes in the public history)')
+    ap.add_argument('--restored-from', type=int, default=None, metavar='N',
+                    help='this publish puts version N back (its page was fetched from /v/N/ and unslimmed into index.html first)')
+    ap.add_argument('--no-history', action='store_true', help='leave out history.json, the history page and v/<N>/ (not the default)')
     a = ap.parse_args()
     if a.unslim:
         if not a.lib_dir or not a.out:

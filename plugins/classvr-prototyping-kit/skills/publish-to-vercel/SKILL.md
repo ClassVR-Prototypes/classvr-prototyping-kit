@@ -13,10 +13,12 @@ description: >
   live at a stable public URL, and ends with the QR code a headset can scan.
   Apps on this route send their diary to the same project, so "what went wrong
   on the headset / in the browser?" is answered from the Vercel connector's
-  runtime logs in seconds — no ClassCloud log fetch. Also handles "undo that
-  publish" / "put the old version back".
+  runtime logs in seconds — no ClassCloud log fetch. Every publish is also a
+  saved version: it handles "show me the versions", "what changed in version
+  4", "go back to version 4" / "put the old version back", "call this version
+  …", and "what's the fingerprint of this version".
 metadata:
-  version: "0.4.0"
+  version: "0.5.0"
 ---
 
 # Publish to Vercel
@@ -34,6 +36,16 @@ Production deploys are public, live at once, and always at the same address,
 so one QR code stays valid for the life of the app. Tested on desktop and on a
 ClassVR headset (Wolvic).
 
+**Every publish is a version.** The build stamps the page's SHA-1 — its
+*fingerprint* — and a one-line note into `vercel.versions` in
+`xr-project.json`, and the deploy carries the whole history along:
+`/history` (a page listing every version), `/history.json` (the same,
+machine-readable) and `/v/<N>/` (every version, playable forever). Older
+versions travel **by fingerprint only** — Vercel already holds their bytes —
+so a fifty-version app costs the same to publish as a two-version one. The
+words to use with the person are **save, version, history, go back, make my
+own copy, fingerprint** — never commit, deploy, rollback, hash or SHA.
+
 This route is **opt-in and additive**: an app is on Vercel only if the user
 asked for it; `/share-xr-app` routes A (GitHub Pages) and B (artifact) and the
 ClassCloud publish keep working, on the same build numbers.
@@ -41,10 +53,12 @@ ClassCloud publish keep working, on the same build numbers.
 ## Outcome
 
 - The app live at a stable public URL `https://<project>.vercel.app`
+- Its history at `<url>/history`, every version at `<url>/v/<N>/`
 - `xr-project.json` carrying `vercel.project`, `vercel.projectId`,
   `vercel.url`, `vercel.deploymentId`, `vercel.build`, `vercel.teamId`,
-  `vercel.lib`, `vercel.owner`, `vercel.store`, and `vercel.history`
-  (the last few deployments, so a publish can be undone)
+  `vercel.lib`, `vercel.owner`, `vercel.store`, and `vercel.versions` (one
+  entry per version: number, date, note, fingerprint, size, and
+  `restoredFrom` when it put an older version back — written by the build)
 - `vercel-qr.png` in the app folder, and rendered as the **last thing in the turn**
 - `index.html` written back if the build number bumped
 
@@ -61,8 +75,8 @@ Vercel reshaped the server's tool set on 21 Sep 2026 — so check for the
 | which team | `list_teams` |
 | read a live page | `web_fetch_vercel_url` |
 | read the diary | `get_runtime_logs`, `get_runtime_errors` |
-| keep history (optional) | `create_storage_stores_blob` |
-| undo a publish | `request_rollback`, `request_promote` |
+| keep play history (optional) | `create_storage_stores_blob` |
+| seed a file Vercel doesn't hold yet | `upload_file` (only if a deploy says `missing_files`) |
 
 No deploy tool at all → stop and say: "Turn on the Vercel connector for this
 chat (Settings → Connectors → Vercel, and sign in to Vercel), then ask me
@@ -103,20 +117,42 @@ Same as every other route: bumps `build` in `xr-project.json` only if the
 source changed. Note `build` and `bumped`. The single-file output in `dist/`
 is **not** uploaded here (ClassCloud and Pages use it); leave it.
 
-### 4. Slim page and library
+### 3b. The version note
+
+Every publish gets a one-line, plain-English "what changed" — the line the
+history page shows next to the version number. **Write it yourself** from
+what the person asked for in this turn ("Added a lap counter above the
+track", "Made the ball bounce higher", "First version"); never ask for it. If
+they said "call this version …" or "note it as …", use their words exactly.
+Restoring an older version: "Put version N back" (and pass
+`--restored-from N`, see "Going back"). No names, no dates in the note — the
+build adds the date, and the public history carries no names by design.
+
+### 4. Slim page, library and history
 
     python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/vercel_build.py \
-        "<project>" --out "<scratch>/dist-vercel"
+        "<project>" --out "<scratch>/dist-vercel" --note "<the version note>"
 
 Build into a scratch directory, not the app folder (nothing here belongs in a
 repo). It writes the **deploy set** under `page/` — `index.html` (the slim
-page), `kit-relay.js`, `api/log.js`, `api/reports.js`, `package.json` and
-`vercel.json` — plus `lib/*` (the four library files for this template
-version) and `manifest.json`. Read the manifest: `deploy` (the file list),
-`deployFiles` (each file's `sha1`, `size` and whether it is `reusable`), `kit`
-(12-hex library version — a hash of the plumbing, so every app made from the
-same template shares it), `libBase` (`https://xr-kit-lib-<kit>.vercel.app`),
-`aframe`, `extraLibs`, and the sha256 of every file.
+page), `v/<N>/index.html` (the same page, at its permanent address),
+`history.json`, `history/index.html`, `kit-relay.js`, `api/log.js`,
+`api/reports.js`, `package.json` and `vercel.json` — plus `lib/*` (the four
+library files for this template version) and `manifest.json`. It also
+records this version in the project's `xr-project.json` (`vercel.versions`),
+so **the project's manifest changed** and must be written back in step 9
+even when the source did not bump. Read the manifest: `deploy` (the complete
+file list, including every older `v/<M>/index.html`), `deployFiles` (each
+file's `sha1`, `size`, whether it is `reusable`, and `byFingerprint: true`
+for older versions that are never re-sent), `history` (`current`, `note`,
+`fingerprint`, `count`), `kit` (12-hex library version — a hash of the
+plumbing, so every app made from the same template shares it), `libBase`
+(`https://xr-kit-lib-<kit>.vercel.app`), `aframe`, `extraLibs`, and the
+sha256 of every file.
+
+Re-running the build for the same build number (a publish that failed, an
+unchanged source) replaces that version's entry rather than adding another,
+so a failed publish never leaves a phantom version behind.
 
 `--no-relay` makes a static page with no diary delivery; `--indexable` leaves
 out the `vercel.json` that keeps the page out of search engines. Neither is
@@ -163,30 +199,45 @@ else the manifest `slug` (e.g. `bubble-pop`).
       requestBody = {
         name: "<project>", target: "production",
         projectSettings: { framework: null },        // first publish only
-        files: [ { file: "index.html", data: <page/index.html>, encoding: "utf-8" },
-                 { file: "kit-relay.js",   sha: <deployFiles sha1> },
-                 { file: "api/log.js",     sha: … },
-                 { file: "api/reports.js", sha: … },
-                 { file: "package.json",   sha: … },
-                 { file: "vercel.json",    sha: … } ] }
+        files: [ // new this publish — inline, from page/
+                 { file: "index.html",         data: <page/index.html>,         encoding: "utf-8" },
+                 { file: "v/<N>/index.html",   data: <the same text>,           encoding: "utf-8" },
+                 { file: "history.json",       data: <page/history.json>,       encoding: "utf-8" },
+                 { file: "history/index.html", data: <page/history/index.html>, encoding: "utf-8" },
+                 // unchanged since some earlier publish — by fingerprint, from deployFiles
+                 { file: "kit-relay.js",     sha: <sha1>, size: <size> },
+                 { file: "api/log.js",       sha: …, size: … },
+                 { file: "api/reports.js",   sha: …, size: … },
+                 { file: "package.json",     sha: …, size: … },
+                 { file: "vercel.json",      sha: …, size: … },
+                 { file: "v/1/index.html",   sha: …, size: … },   // one per older version,
+                 { file: "v/2/index.html",   sha: …, size: … } ] }  // straight from deployFiles
 
 (With `deploy_to_vercel` instead: same file list, `target`/`name`/`teamId` at
-the top level, and every file inline — that tool has no `sha` form.)
+the top level, and every file inline — that tool has no `sha` form, so older
+versions cannot ride along by fingerprint; build with `--no-history` there.)
 
-Three rules, each learned the hard way:
+Four rules, each learned the hard way:
 
 - **Always `production`.** Preview deployments sit behind a Vercel login and a
   headset cannot open them.
 - **Always send the complete file set** (every name in the manifest's `deploy`
-  list). A deploy replaces everything in the project, so a file left out is
-  gone from the live site.
-- **Only `index.html` changes between publishes.** The others are byte-identical
-  every time, so send them as `{ file, sha }` — the SHA1 in `deployFiles`,
-  `size` optional — and Vercel reuses the copy it already has. This works for
-  any file the *account* has uploaded before, in any project (verified 21 Sep),
-  so from the second publish anywhere they never travel again. On a brand-new
-  account, or if the deploy is rejected for an unknown SHA, send that file
-  inline once (`data` + `encoding: "utf-8"`) and use the SHA next time.
+  list — the `byFingerprint` ones included). A deploy replaces everything in
+  the project, so a file left out is gone from the live site, and a version
+  left out vanishes from the history.
+- **Inline what is new, fingerprint what is not.** `deployFiles` says which
+  is which: `reusable: false` → send `data` + `encoding: "utf-8"`;
+  `reusable: true` → send `{ file, sha, size }` and Vercel reuses the bytes
+  it already holds. That works for any file the *account* has uploaded
+  before, in any project (verified 21–22 Sep). A file can only be referenced
+  by fingerprint once Vercel has its bytes, which is why the current page is
+  sent inline twice (as `index.html` and as `v/<N>/index.html`) and becomes
+  a by-fingerprint entry from the next publish on.
+- **`missing_files` means Vercel does not hold that fingerprint yet** (a
+  brand-new account, or a support file that changed with a kit release). The
+  error lists the SHA1s. For each, either send that file inline this once, or
+  `upload_file` it (`xVercelDigest` = its sha1, `contentLength` = its size,
+  body base64) and deploy again by fingerprint. Never drop the file.
 
 With the functions and a dependency install the deploy takes ~20 s; poll
 `get_deployment` until `READY` before verifying.
@@ -204,10 +255,13 @@ Record with `manifest.py --project "<project>" --set …`: `vercel.project`,
 `vercel.projectId` (`project.id` from `get_deployment`, `prj_…`), `vercel.url`
 (with `https://`), `vercel.deploymentId`, `vercel.build=<N>`, `vercel.teamId`,
 `vercel.lib=<kit>`, and on a first publish `vercel.owner="<user's email>"`.
-Also keep a short history so a publish can be undone — newest first, at most
-three (Vercel's Hobby plan keeps only the last three anyway):
-
-    --set vercel.history='[{"build":<N>,"id":"<dpl_…>"},{…},{…}]'
+`vercel.versions` is already written by the build — do not edit it by hand.
+On a **first** publish the build ran before `vercel.url` was known, so the
+`history.json` that went up says `"url": null`; that is fine (the page
+still works) and the next publish fills it in. If the person will share the
+history link straight away, run step 4 again now that the URL is recorded
+and redeploy — everything but the two history files goes by fingerprint, so
+it costs almost nothing.
 
 ### 6b. Play history (first publish only)
 
@@ -233,7 +287,11 @@ reused, connect it in the Vercel dashboard instead and skip this step.
 
 `web_fetch_vercel_url` on `vercel.url`: the text must contain
 `window.BUILD = <N>;`, `./kit-relay.js`, the `xr-kit-source` meta line and the
-four `<libBase>/xr-kit-…` references. If the browser pane is available, also
+four `<libBase>/xr-kit-…` references. Then `<vercel.url>/history.json`: its
+`current` must be `<N>` and it must list every version in `vercel.versions`;
+and `<vercel.url>/v/<N>/` must answer 200 with the same page as the root. If
+the app had older versions, spot-check one `<vercel.url>/v/<M>/` too — a 404
+there means a by-fingerprint entry was left out of the deploy. If the browser pane is available, also
 open `vercel.url?kitcheck` and read `window.KIT.report()` and
 `window.KIT.checkResults`: scene loaded, 0 errors, the Enter VR button present
 (`.a-enter-vr-button`). The "player can walk forward" self-check fails in the
@@ -250,43 +308,68 @@ regenerate only if `vercel.url` changed.
 
 ### 9. Write back and report
 
-Write `xr-project.json` — and `index.html` if `bumped` — and `vercel-qr.png`
+Write `xr-project.json` (it always changed: `vercel.versions` gained an
+entry) — and `index.html` if `bumped` — and `vercel-qr.png`
 back to the user's folder (Cowork: `SendUserFile` `display: "attach"`, then
 `device_commit_files`; in a repo, commit them as any other edit). Render
 `vercel-qr.png` **last** (`display: "render"`), with the URL on its own line
 just above it.
 
-One or two sentences, in the kit's voice: the app name, that build N is live,
-open the address in any browser, scan the QR on a ClassVR headset and press
-the VR button. First publish only: "the page is public — anyone with the
-address can open it" (it is kept out of search engines, but that is not worth
-saying unless asked). Do not explain Vercel, the library, manifests or build
-numbers unless asked.
+One or two sentences, in the kit's voice: the app name, that **version N** is
+live ("saved as version 3 — added a lap counter"), open the address in any
+browser, scan the QR on a ClassVR headset and press the VR button. First
+publish only: "the page is public — anyone with the address can open it" (it
+is kept out of search engines, but that is not worth saying unless asked),
+and mention once that every version is kept and `<url>/history` lists them.
+Do not explain Vercel, the library, manifests, fingerprints or build numbers
+unless asked. Say "version", not "build", to the person — they are the same
+number.
 
-## Undoing a publish
+## Showing the history
 
-"Undo that", "put the old version back", "go back to the version before this
-one" — for an app with `vercel.history`:
+"Show me the versions", "what changed in version 4", "when did I add the
+sign", "which version is on the headset" — read `<vercel.url>/history.json`
+(`web_fetch_vercel_url`; it is public and tiny, so this works for **any**
+kit app on Vercel, not only the person's own). Answer in a sentence or a
+short list: version number, date, note; add the fingerprint (first eight
+characters) only when two people need to be sure they mean the same one.
+Point them at `<vercel.url>/history` if they want to look or click through.
+Anyone with the address can read it — say so if they ask who can see it.
 
-    request_rollback  projectId = vercel.projectId  deploymentId = <the previous id>
-                      teamId = vercel.teamId        description = "…"
+## Going back to a version
 
-The old build is live again within seconds, on the same address (verified on
-Hobby, 21 Sep). Then set `vercel.build` back and move `vercel.deploymentId` to
-that id, keeping the history list as it was.
+"Go back to version 4", "put the old version back", "undo that publish",
+"restore version 4". This is an ordinary publish whose source is the older
+page — nothing is rolled back and nothing is deleted, so it works on every
+Vercel plan and the history stays a straight line:
 
-**A rollback pins the address to that deployment.** The next publish will
-build fine but the public URL will still show the old one until it is promoted:
+1. Which version? "Undo that" / "the version before" = the one below
+   `current` in `history.json`. A number = that number. Confirm in half a
+   sentence what it contains (its note) before doing it if there is any
+   doubt.
+2. Fetch `<vercel.url>/v/<M>/index.html` with `web_fetch_vercel_url` and
+   save it as `<scratch>/restore.html`. Fetch the four library files the
+   page names (`/copy-xr-app` step 4 lists them) into `<scratch>/lib/` if
+   they are not already at hand.
+3. Rebuild the source and put it in place of the app's `index.html`:
 
-    request_promote  projectId = vercel.projectId  deploymentId = <the new id>  teamId = …
+       python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/vercel_build.py \
+           --unslim "<scratch>/restore.html" --lib-dir "<scratch>/lib" \
+           --out "<project>/index.html" --expect-sha1 <that version's sha1 from history.json>
 
-So after any rollback, the next run of step 6 must end with a `request_promote`
-and a re-check of `vercel.url`. If the user asks to "go forward again" instead
-of publishing, promote the newer deployment directly.
+   `--expect-sha1` refuses a page that does not match the history — fetch
+   again rather than restoring something unverified.
+4. Steps 2–9 as normal, with `--note "Put version <M> back" --restored-from <M>`
+   in step 4. The result is a **new** version (N+1) whose page is identical
+   to version M apart from its number; the history page tags it "restored
+   from version M". Versions between M and N stay in the history — say so:
+   "version 4 is back on the headset, as version 7; 5 and 6 are still there
+   if you want them."
 
-Vercel keeps the **last three production builds** on the Hobby plan, and 30
-days of them; on Pro it is a year and twenty. Beyond that there is nothing to
-roll back to — say so plainly rather than guessing.
+Never `request_rollback` for this: it is Pro-only for arbitrary versions,
+it pins the address until a promote, and it hides what happened from the
+history. If a very recent publish is *broken* and speed matters, restoring
+the previous version this way still takes under a minute.
 
 ## Reading what happened (debugging on this route)
 
@@ -363,3 +446,12 @@ from the build, or rebuild it); an error inside the shared library is coded
   (the page is public); the diary carries no personal data by construction.
 - Everyone publishing needs their own Vercel account, and Vercel accounts are
   16+ — this route is for staff. Pupils get the app through ClassCloud.
+- The version history is public along with the page, by design: anyone with
+  the address can list, play and copy every version. It carries no names.
+  Versions published before kit 0.25 are not in it — an app already on
+  Vercel starts its history at the first publish made with this version, and
+  `vercel.versions` starts at whatever `build` is then.
+- Old versions live in the *latest* deployment (by fingerprint), so the
+  history does not depend on Vercel keeping old deployments. It does depend
+  on Vercel keeping a file's bytes while a live deployment references them,
+  which is the same promise that serves the page at all.

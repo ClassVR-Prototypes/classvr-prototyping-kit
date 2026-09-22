@@ -4,15 +4,17 @@ description: >
   This skill should be used when the user wants their own copy of an XR app
   that someone else published — "copy this app", "make me my own version of
   this", "fork this prototype", "I want to build on this one", "can I edit
-  this app someone sent me", or /copy-xr-app followed by a published address.
-  It takes the address of a kit app published on Vercel, GitHub Pages or
-  ClassCloud, rebuilds the app's full source from the published page, puts it
-  in a new project folder the user can edit with ordinary prompts, checks it
-  runs, and offers to publish it as their own. Nothing is needed from the
-  person who made the original — no files sent, no repository, no account
-  shared.
+  this app someone sent me", "copy version 4 of this", or /copy-xr-app
+  followed by a published address (optionally with a version number or a
+  /v/N/ address). It takes the address of a kit app published on Vercel,
+  GitHub Pages or ClassCloud, rebuilds the app's full source from the
+  published page — the current version or any earlier one from the app's
+  history — checks its fingerprint, puts it in a new project folder the user
+  can edit with ordinary prompts, checks it runs, and offers to publish it as
+  their own. Nothing is needed from the person who made the original — no
+  files sent, no repository, no account shared.
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # Copy an XR app
@@ -41,9 +43,20 @@ numbers, their publish. The original is untouched and cannot be affected.
 The user gives a URL, or names an app whose address is in this session or in a
 folder's `xr-project.json`. Accepted:
 
-- `https://<name>.vercel.app` — the Vercel route
+- `https://<name>.vercel.app` — the Vercel route (current version)
+- `https://<name>.vercel.app/v/<N>/` — one particular version of it
 - `https://<owner>.github.io/<repo>/<slug>/` — the Pages route
 - an AVNFS / ClassCloud page address — a single-file build
+
+"Version 4 of …", "the one from Tuesday", "the version with the lap counter"
+→ the Vercel route with a version. Fetch `<address>/history.json`
+(`web_fetch_vercel_url`); it lists every version with its number, date, note
+and `sha1`. Pick the one they mean (by number, date or note); if it is
+ambiguous, show the two or three candidates in a line each and ask which.
+Then the page to copy is `<address>/v/<N>/` and its expected fingerprint is
+that entry's `sha1`. No `history.json` (404) → an app published before the
+kit kept versions; only the current page can be copied — say so in one line
+if they asked for an older one.
 
 If they only have a QR code, ask them to paste the address it opens, or read
 it in the browser pane.
@@ -92,9 +105,14 @@ instead.
 
     python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/vercel_build.py \
         --unslim "<scratch>/published.html" --lib-dir "<scratch>/lib" \
-        --out "<scratch>/index.html"
+        --out "<scratch>/index.html" [--expect-sha1 <sha1 from history.json>]
 
-It prints the app's name, build number, slug and the A-Frame version it wants.
+Pass `--expect-sha1` whenever `history.json` gave one (for the current
+version too: its entry is the one numbered `current`). It refuses a page
+whose fingerprint does not match — fetch again rather than copying something
+unverified. It prints the app's name, build number, slug, the A-Frame version
+it wants, and `publishedSha1` / `fingerprint` (the first eight characters) of
+the page it rebuilt from.
 The result is the original source, with one deliberate difference: the status
 panel reads the app's name from the page title rather than carrying it as a
 literal. That is normal — do not mention it.
@@ -117,7 +135,7 @@ Replace the scaffolded `index.html` with the rebuilt one, keep
         --project "<folder>" \
         --set build=0 \
         --set dof=<3 or 6, read from the page's `<a-scene xr-kit="dof: N">`> \
-        --set forkedFrom='{"url":"<address>","build":<N>,"lib":"<kit>","at":"<today>"}'
+        --set forkedFrom='{"url":"<address>","version":<N>,"sha1":"<publishedSha1>","lib":"<kit>","at":"<today>"}'
 
 Then **clear the original's identity** so a publish creates the copier's own
 project — `classcloud.activityId`, `classcloud.lastUrl`, `artifact.url`,
@@ -155,7 +173,10 @@ their app yet in any other sense.
 
 The rebuilt source is the original author's work. Record where it came from
 (`forkedFrom`, above) and leave it there; if the user renames the app, keep
-the field. If the original carries a `licence` in its manifest or a licence
+the field. When the copy is published to Vercel, its own `history.json`
+carries a `copiedFrom` line (address, version and fingerprint — no names)
+taken from that field; it is recorded, not displayed on the history page,
+and Claude can answer "where did this come from?" from it. If the original carries a `licence` in its manifest or a licence
 line in the page, copy it across and say what it is in one line. The kit does
 not decide what staff prototypes may be reused for — if the user asks, say it
 is an Avantis question, not a technical one.
@@ -166,7 +187,8 @@ is an Avantis question, not a technical one.
   down.
 - Reach `github.io` or ClassCloud pages from the cloud workspace — those need
   the browser pane or a paste.
-- Give the copier the original's play history or build history; the copy
-  starts clean at build 1.
+- Give the copier the original's play history or version history; the copy
+  starts clean at version 1 (with `copiedFrom` recording which version of
+  the original it began as).
 - Change the original in any way. There is no "send my changes back" — the
   copier publishes their own, and the two are separate from then on.
