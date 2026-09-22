@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "ClassVR Prototyping Kit app on Vercel: static page plus the two small functions that keep its diary.",
+  "dependencies": {
+    "@vercel/blob": "^2.8.0"
+  }
+}

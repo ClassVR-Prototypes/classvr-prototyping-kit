@@ -36,8 +36,13 @@ as `/publish-to-vercel` ("Reading what happened") describes:
 `query` = `"kit-diary"`. The headset shows as an `Android … Mobile VR` user
 agent. If sessions are there, go straight to step 6 with them. If nothing is
 there (the play was more than an hour ago on Vercel's free plan, or the
-connector is off in this chat), say so in one line and continue with the
-ClassCloud log below — it still works for these apps.
+connector is off in this chat), try the app's own history next — every session
+that reached VR or closed the page left a record that outlives the log:
+`web_fetch_vercel_url` on `<vercel.url>/api/reports` for a line per session
+(add `?day=YYYY-MM-DD` for one day, `?session=<id>` for every diary entry of
+one). That answers "what happened in Tuesday's lesson?" on Friday. Only if
+both are empty, say so in one line and continue with the ClassCloud log
+below — it still works for these apps.
 
 ### 1. Which app, which headset
 

@@ -11,11 +11,20 @@
       "name": "classvr-prototyping-kit",
       "source": "./plugins/classvr-prototyping-kit",
       "displayName": "ClassVR Prototyping Kit",
-      "description": "Create a working WebXR scene, share it on a permanent link (GitHub Pages, Vercel or a Claude Artifact), and publish it to ClassCloud as a scannable QR code — no terminal, no libraries to install.",
-      "version": "0.23.0",
-      "author": { "name": "Avantis — Project Ptah" },
+      "description": "Create a working WebXR scene, share it on a permanent link (GitHub Pages, Vercel or a Claude Artifact), copy someone else's prototype from its address, and publish it to ClassCloud as a scannable QR code — no terminal, no libraries to install.",
+      "version": "0.24.0",
+      "author": {
+        "name": "Avantis — Project Ptah"
+      },
       "repository": "https://github.com/ClassVR-Prototypes/classvr-prototyping-kit",
-      "keywords": ["webxr", "classvr", "a-frame", "vr", "prototype", "eduverse"],
+      "keywords": [
+        "webxr",
+        "classvr",
+        "a-frame",
+        "vr",
+        "prototype",
+        "eduverse"
+      ],
       "category": "development"
     }
   ]

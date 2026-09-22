@@ -3,18 +3,19 @@
 Build a WebXR prototype and get it onto a ClassVR headset without a terminal, a
 server, a certificate, or a single command typed by hand.
 
-Four things you can say:
+Things you can say:
 
 | You say | What happens |
 |---|---|
 | **"Make a new VR app called Planet Walk"** (`/new-xr-app`) | A folder appears with a working scene — checked green ground, blue sky, a VR rig with controllers, thumbstick movement and snap-turn — and the app opens on screen as a Claude Artifact with its own permanent link. Right-click and drag to look around, left-click presses; WASD moves, Q/E turn. If the name sounds like a game ("Bubble Pop") and you didn't say what it does, you're offered a few concepts — or the empty scene — and the one you pick is built as a first playable version. |
 | **"Share it" / "refresh the link"** (`/share-xr-app`) | The app is rebuilt, checked, and its link updated. In a GitHub repository (Claude Code) the link is a public **GitHub Pages** URL, which also works for Enter VR on a headset; elsewhere it is a Claude Artifact. Runs on its own after every edit, so the link is never behind, and the URL is put in the chat. |
-| **"Host it on Vercel"** (`/publish-to-vercel`) | Opt-in third kind of link, for Cowork sessions with the **Vercel connector** on: the app is rebuilt as a small page that loads the kit's plumbing from a shared, versioned library, deployed to `https://<app>.vercel.app` through the connector — no Git, no upload screen — verified live, and you get a QR code. Enter VR works on a headset; updates are live in seconds; and the app sends its diary to the same project, so "what went wrong?" is answered from the Vercel connector in seconds whether it was played on a headset, a desktop or a shared link. Say it when you create the app ("…hosted on Vercel") or any time after. |
+| **"Host it on Vercel"** (`/publish-to-vercel`) | Opt-in third kind of link, for Cowork sessions with the **Vercel connector** on: the app is rebuilt as a small page that loads the kit's plumbing from a shared, versioned library, deployed to `https://<app>.vercel.app` through the connector — no Git, no upload screen — verified live, and you get a QR code. Enter VR works on a headset; updates are live in seconds; the page is kept out of search engines; and the app sends its diary to the same project, so "what went wrong?" is answered in seconds whether it was played on a headset, a desktop or a shared link — for weeks afterwards, not just the past hour. Say it when you create the app ("…hosted on Vercel") or any time after. "Undo that publish" puts the previous version straight back. |
+| **"Make me my own copy of this"** (`/copy-xr-app`) | Give it the address of any published kit app — yours or a colleague's — and you get the whole thing as an editable project in your own folder, checked and ready to change. Nothing is needed from whoever made it: no files sent, no repository, no shared account. Your copy is yours; the original is untouched. |
 | **"Show me"** (`/preview-xr-app`) | The app is loaded in a headless browser and checked for errors. You get a screenshot and a one-line health report. |
 | **"Put it on the headset"** (`/publish-xr-app`) | The app is verified, uploaded to ClassCloud, filed under your organisation's **XR Prototypes** playlist, and you get a QR code. Scan it on the headset. Re-publish as often as you like — the QR never changes. |
 
 Everything in between — "add a table", "make the ball bounce", "put a sign up" —
-is just conversation. A fourth skill, `xr-app-rules`, loads automatically while
+is just conversation. One more skill, `xr-app-rules`, loads automatically while
 an app is being edited and quietly applies the constraints that keep it working
 on a headset.
 
@@ -27,8 +28,10 @@ skills/
   share-xr-app/      build → verify → GitHub Pages (in a repo) or Claude Artifact, on a permanent link
     assets/pages/                    the Pages workflow + site builder the kit installs in a repo
   publish-to-vercel/ build a slim page + shared library → deploy through the Vercel connector → QR
-    scripts/vercel_build.py          extracts the kit's plumbing from an app into versioned library files
+    scripts/vercel_build.py          extracts the kit's plumbing into versioned library files; --unslim puts it back
     assets/kit-relay.js, api-log.js  the diary relay: page → /api/log → Vercel runtime log → connector
+    assets/api-reports.js            the same diary kept per session, readable weeks later
+  copy-xr-app/       rebuild an app's source from its published address into a new project folder
   publish-xr-app/    build → verify → upload → playlist → QR
   check-headset/     after a play on a headset: fetch its log, read the app's diary
   xr-app-rules/      the constraints, applied on every edit
