@@ -2,21 +2,18 @@
 name: publish-to-vercel
 description: >
   This skill should be used when the user asks to "host it on Vercel", "put my XR
-  app on Vercel", "publish to Vercel", "deploy to Vercel", "refresh the Vercel
-  page", invokes /publish-to-vercel, or asks to create a new XR app naming Vercel
-  as where it should live ("make a VR app called X, hosted on Vercel"). It is
-  route C of /share-xr-app: chosen when the user names Vercel or the app's
-  xr-project.json already has `vercel.url`, and then used instead of the Pages
-  or artifact link after every edit. It builds the app into a slim page that
-  loads the kit's plumbing from a shared, versioned library, deploys it through
-  the Vercel connector — no Git, no terminal, no upload screen — verifies it
-  live at a stable public URL, and ends with the QR code a headset can scan.
-  Apps on this route send their diary to the same project, so "what went wrong
-  on the headset / in the browser?" is answered from the Vercel connector's
-  runtime logs in seconds — no ClassCloud log fetch. Every publish is also a
-  saved version: it handles "show me the versions", "what changed in version
-  4", "go back to version 4" / "put the old version back", "call this version
-  …", and "what's the fingerprint of this version".
+  app on Vercel", "publish to Vercel", "refresh the Vercel page", invokes
+  /publish-to-vercel, or creates a new XR app naming Vercel as its home ("make a
+  VR app called X, hosted on Vercel"). It is route C of /share-xr-app: chosen
+  when the user names Vercel or the app's xr-project.json has `vercel.url`, and
+  then used after every edit. It builds a slim page that loads the kit's
+  plumbing from a shared library, deploys it through the Vercel connector — no
+  Git, no terminal — verifies it live at a stable public URL and ends with the
+  headset QR code. The app's diary lands in the same project, so "what went
+  wrong on the headset?" is answered from the connector's runtime logs. Every
+  publish is a saved version: also use for "show me the versions", "what
+  changed in version 4", "go back to version 4", "put the old version back",
+  "call this version …" and "what's the fingerprint of this version".
 metadata:
   version: "0.5.0"
 ---
