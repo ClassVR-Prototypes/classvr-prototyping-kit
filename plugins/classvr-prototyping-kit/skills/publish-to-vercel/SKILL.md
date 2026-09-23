@@ -15,7 +15,7 @@ description: >
   changed in version 4", "go back to version 4", "put the old version back",
   "call this version …" and "what's the fingerprint of this version".
 metadata:
-  version: "0.6.1"
+  version: "0.7.0"
 ---
 
 # Publish to Vercel
@@ -49,7 +49,12 @@ ClassCloud publish keep working, on the same build numbers.
 
 ## Outcome
 
-- The app live at a stable public URL `https://<project>.vercel.app`
+- The app live at a stable public URL `https://<project>.vercel.app`, where
+  `<project>` is `classvr-<app>-<vercel username>` for apps first published
+  with kit 0.27 or later (see step 6)
+- The page drawing **its own QR code** in its top-right corner (click to fill
+  the screen), pointing at the public address — or at `/v/<N>/` on a
+  version's own page — so a headset can scan it straight off any screen
 - Its history at `<url>/history`, every version at `<url>/v/<N>/`
 - The same page kept in the app folder as `versions/Versions 1 - 10/03-index.html`
   with `03-README.txt` beside it (ten versions to a sub-folder), so going
@@ -131,13 +136,19 @@ build adds the date, and the public history carries no names by design.
 ### 4. Slim page, library and history
 
     python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/vercel_build.py \
-        "<project>" --out "<scratch>/dist-vercel" --note "<the version note>"
+        "<project>" --out "<scratch>/dist-vercel" --note "<the version note>" \
+        [--url "https://<project name>.vercel.app/"]      # first publish only
+
+**First publish:** work out the project name now (step 6, "Project name")
+and pass `--url https://<that name>.vercel.app/`, so the page's QR code is
+right on the very first deploy. Later publishes leave `--url` out — the
+build reads `vercel.url`.
 
 Build into a scratch directory, not the app folder (nothing here belongs in a
 repo). It writes the **deploy set** under `page/` — `index.html` (the slim
 page), `v/<N>/index.html` (the same page, at its permanent address),
-`history.json`, `history/index.html`, `kit-relay.js`, `api/log.js`,
-`api/reports.js`, `package.json` and `vercel.json` — plus `lib/*` (the four
+`history.json`, `history/index.html`, `kit-relay.js`, `kit-qr.js`,
+`api/log.js`, `api/reports.js`, `package.json` and `vercel.json` — plus `lib/*` (the four
 library files for this template version) and `manifest.json`. It also
 records this version in the project's `xr-project.json` (`vercel.versions`)
 and keeps the page in the project as `versions/Versions <A> - <B>/<NN>-index.html`
@@ -196,8 +207,18 @@ through the deploy tool.
 ### 6. Deploy the app
 
 Team: `vercel.teamId` from the manifest if set, else `list_teams` (one team →
-use it; several → ask once which). Project name: `vercel.project` if set,
-else the manifest `slug` (e.g. `bubble-pop`).
+use it; several → ask once which).
+
+**Project name:** `vercel.project` if set — an app already on Vercel keeps
+its name and address for life. Otherwise build a new one:
+`classvr-<slug>-<username>`, where `<username>` is `user.username` from
+`get_auth_user` (e.g. `classvr-bubble-pop-lukemoseley-avantis`). Lowercase,
+letters, digits and single hyphens only; if it is longer than 63 characters,
+shorten the `<slug>` part (a host-name label cannot be longer). Every
+`*.vercel.app` address is one worldwide first-come list, so the plain slug is
+often taken by a stranger; the prefix and username make a clash rare. No
+username available → use the person's initials from their name. Never ask
+the person to choose a name.
 
     create_deployment  teamId = <team>   skipAutoDetectionConfirmation = "1"
       requestBody = {
@@ -252,8 +273,17 @@ address is `<project>.vercel.app` and only that.** The team-suffixed alias
 covers it, so it answers `401 Protected deployment` and a headset cannot open
 it (verified 21 Sep). Never hand it out, and never the per-deployment URL
 (`<project>-<hash>-…`) either. If the bare alias is missing, the project name
-is taken globally — pick another name and redeploy rather than falling back to
-a protected address.
+is taken globally — Vercel then gives the project a random-suffixed address
+instead. Do not use it: add `-2` (then `-3`, …) to the project name, rebuild
+with the new `--url` and deploy again as a new project, rather than falling
+back to a protected or unpredictable address. (Rare with the naming rule
+above; apps published before 0.27, like `tiny-racers-mu`, keep whatever they
+got.)
+
+**The QR check (first publish):** the manifest's `qrUrl` must equal the
+public address just confirmed. If they differ (a renamed project), rebuild
+with `--url <the real address>` and redeploy before going on — the page's
+own QR code must never point anywhere else.
 
 Record with `manifest.py --project "<project>" --set …`: `vercel.project`,
 `vercel.projectId` (`project.id` from `get_deployment`, `prj_…`), `vercel.url`
@@ -293,7 +323,9 @@ reused, connect it in the Vercel dashboard instead and skip this step.
 `window.BUILD = <N>;`, `./kit-relay.js`, the `xr-kit-source` meta line and the
 four `<libBase>/xr-kit-…` references. Then `<vercel.url>/history.json`: its
 `current` must be `<N>` and it must list every version in `vercel.versions`;
-and `<vercel.url>/v/<N>/` must answer 200 with the same page as the root. If
+and `<vercel.url>/v/<N>/` must answer 200 with the same page as the root.
+The page must carry `<meta name="xr-kit-qr" content="url=<vercel.url>/">`
+and `<vercel.url>/kit-qr.js` must answer 200. If
 the app had older versions, spot-check one `<vercel.url>/v/<M>/` too — a 404
 there means a by-fingerprint entry was left out of the deploy. If the browser pane is available, also
 open `vercel.url?kitcheck` and read `window.KIT.report()` and
@@ -308,7 +340,8 @@ live page is wrong, say so and fix before showing the QR.
 
 (`pip install qrcode pillow --break-system-packages` if the module is
 missing.) The address never changes for the app, so the file is made once;
-regenerate only if `vercel.url` changed.
+regenerate only if `vercel.url` changed. This PNG is for the chat and the
+folder; the page itself draws the same code in its corner.
 
 ### 9. Write back and report
 
@@ -323,6 +356,9 @@ just above it.
 One or two sentences, in the kit's voice: the app name, that **version N** is
 live ("saved as version 3 — added a lap counter"), open the address in any
 browser, scan the QR on a ClassVR headset and press the VR button. First
+publish of an app, or the first after kit 0.27: add that the page shows its
+own QR code in the corner, so anyone with the page open can scan it (click it
+to make it bigger). First
 publish only: "the page is public — anyone with the address can open it" (it
 is kept out of search engines, but that is not worth saying unless asked),
 and mention once that every version is kept and `<url>/history` lists them.
@@ -453,8 +489,12 @@ from the build, or rebuild it); an error inside the shared library is coded
 
 - Extra bundled libraries (`cannon.iife.js`) are not hosted yet — step 4
   stops with a plain message.
-- The QR is a PNG in the chat and the app folder; it is not yet drawn on the
-  page itself the way the Pages site builder does it.
+- The on-page QR code arrives with an app's next publish; versions published
+  before kit 0.27 (older `/v/<N>/` pages) do not have it, and never will —
+  their bytes are kept exactly as published.
+- On a narrow window (under 700 px wide or 520 px tall) the card shrinks to a
+  96 px code that is too small to scan off a screen; click it to fill the
+  screen first. Same as the Pages card.
 - Vercel's free Hobby plan is for non-commercial personal use (100 deploys a
   day); staff use belongs on a Pro team. Runtime logs last an hour there (a
   day on Pro); the Blob history is what covers anything older, within Hobby's

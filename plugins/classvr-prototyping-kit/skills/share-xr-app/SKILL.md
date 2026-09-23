@@ -27,7 +27,7 @@ There are two kinds of link, and **where the app lives decides which**:
 |---|---|---|---|
 | inside a git repository with a GitHub remote | **A — GitHub Pages** | `https://<owner>.github.io/<repo>/<slug>/` | **Yes** — a plain HTTPS page; the page shows its own QR code for the headset to scan |
 | a plain folder (Cowork, a local session, no repo) | **B — Claude Artifact** | `https://claude.ai/…/artifact/…` | No — the viewer's frame blocks WebXR |
-| anywhere, when the user has chosen **Vercel** (or the manifest already has `vercel.url`) | **C — Vercel** (`/publish-to-vercel`) | `https://<project>.vercel.app` | **Yes** — a plain HTTPS page, published through the Vercel connector; the QR code is rendered in the chat |
+| anywhere, when the user has chosen **Vercel** (or the manifest already has `vercel.url`) | **C — Vercel** (`/publish-to-vercel`) | `https://<project>.vercel.app` | **Yes** — a plain HTTPS page, published through the Vercel connector; the QR code is rendered in the chat and drawn on the page itself |
 
 Route A is preferred whenever it is available. Route C is opt-in: it needs the
 Vercel connector on in the chat, and is chosen only when the user names

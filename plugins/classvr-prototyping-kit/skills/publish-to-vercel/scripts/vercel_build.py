@@ -14,8 +14,9 @@ Second build output for a kit app, alongside build.py's single file:
             files and A-Frame from URLs, kit-relay.js (posts the app's diary
             to /api/log), api/log.js (receives it, prints it to the runtime
             log and keeps one copy per session in Blob storage),
-            api/reports.js (reads that history back), package.json and
-            vercel.json. Only index.html changes from publish to publish —
+            api/reports.js (reads that history back), kit-qr.js (draws a
+            QR code of the page's public address on the page), package.json
+            and vercel.json. Only index.html changes from publish to publish —
             the others are byte-identical every time, so a publish can send
             them by SHA instead of re-uploading them (see `deployFiles` in
             manifest.json).
@@ -53,11 +54,20 @@ so "go back to version 3" on the person's own app needs no download at all
 (`--local-version 3` finds the file and checks its fingerprint), and the
 history travels with the folder. `--no-local-versions` turns it off.
 
+On-page QR code (kit 0.27). The page carries
+  <meta name="xr-kit-qr" content="url=https://<project>.vercel.app/">
+and loads /kit-qr.js, which draws the card when the page opens: host from that
+line (never a protected *.vercel.app alias), path from the page itself, so
+/v/<N>/ shows a code for that exact version. The address comes from --url, else
+vercel.url in xr-project.json; on a first publish the skill passes the address
+it expects (https://<project>.vercel.app/) and checks it after the deploy.
+--no-qr leaves the card out. --unslim removes both lines again.
+
 Usage:
   vercel_build.py <app folder> [--lib-base https://…] [--kit-version auto|label]
                   [--aframe auto|X.Y.Z] [--out <dir>] [--no-relay] [--indexable]
                   [--note "what changed"] [--restored-from N] [--no-history]
-                  [--no-local-versions]
+                  [--no-local-versions] [--url https://<project>.vercel.app/] [--no-qr]
   vercel_build.py <app folder> --local-version N
 
   vercel_build.py --unslim <published index.html> --lib-dir <dir> --out <file>
@@ -78,6 +88,7 @@ instead of carrying it as a literal.
 import argparse, datetime, hashlib, html as htmlmod, json, os, re, shutil, sys
 
 SOURCE_META = 'xr-kit-source'
+QR_META = 'xr-kit-qr'
 BUNDLED_COMMENT = '<!-- Libraries are bundled beside this file, never loaded from a CDN. -->'
 HISTORY_JSON = 'history.json'
 HISTORY_PAGE = 'history/index.html'
@@ -289,6 +300,12 @@ def plain_characters(text):
     return _ESC.sub(sub, text), count[0]
 
 
+def public_url(url):
+    """https://host/ from any https address, or None."""
+    m = re.match(r'^(?:https://)?([a-z0-9.-]+\.[a-z]{2,})(?:[/?#].*)?$', (url or '').strip(), re.IGNORECASE)
+    return ('https://%s/' % m.group(1).lower()) if m else None
+
+
 def sha1_bytes(text):
     b = text.encode('utf-8')
     return hashlib.sha1(b).hexdigest(), len(b)
@@ -352,7 +369,9 @@ def build(a):
     page = page[:xrkit.start()] + '<script src="%s/xr-kit-%s.js"></script>' % (L, v) + page[xrkit.end():]
     page = page[:style.start()] + '<link rel="stylesheet" href="%s/xr-kit-%s.css">' % (L, v) + page[style.end():]
     page = page[:aframe_tag.start()] + '<script src="https://aframe.io/releases/%s/aframe.min.js"></script>' % a.aframe + page[aframe_tag.end():]
-    relay_tag = '' if a.no_relay else '\n<script src="./kit-relay.js"></script>'
+    # absolute: the same page is also served at /v/<N>/, where ./kit-relay.js
+    # would 404 (it did before 0.27 — version pages sent no diary)
+    relay_tag = '' if a.no_relay else '\n<script src="/kit-relay.js"></script>'
     page = page[:diary.start()] + '<script src="%s/xr-kit-diary-%s.js"></script>' % (L, v) + relay_tag + page[diary.end():]
     # any other bundled library (cannon.iife.js, ...) must be hosted beside the
     # kit files; point at it there and list it so the publish step can check
@@ -368,6 +387,16 @@ def build(a):
     source_meta = ('<meta name="%s" content="kit=%s; build=%d; slug=%s; aframe=%s; lib=%s">'
                    % (SOURCE_META, v, build_no, slug, a.aframe, L))
     page = re.sub(r'(<meta charset="[^"]*">)', r'\1\n' + source_meta.replace('\\', '\\\\'), page, count=1)
+    # the on-page QR code: one line naming the public address, one script tag
+    # at the very end of the body (kit-qr.js works out the rest when it runs)
+    qr_url = None
+    if not a.no_qr:
+        qr_url = public_url(a.url or (manifest.get('vercel') or {}).get('url'))
+        if qr_url:
+            page = page.replace(source_meta, source_meta + '\n<meta name="%s" content="url=%s">' % (QR_META, qr_url), 1)
+        ends = list(re.finditer(r'</body\s*>', page, flags=re.IGNORECASE))
+        tag = '<script src="/kit-qr.js"></script>\n'
+        page = (page[:ends[-1].start()] + tag + page[ends[-1].start():]) if ends else page + '\n' + tag
     page, plained = plain_characters(page)
     if plained:
         print('wrote %d special character%s plainly (so the fingerprint survives the upload)' % (plained, '' if plained == 1 else 's'))
@@ -404,7 +433,7 @@ def build(a):
             dest = os.path.join(out, 'page', name)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             open(dest, 'w', encoding='utf-8', newline='\n').write(deploy[name])
-    fixed = []
+    fixed = [] if a.no_qr else [('kit-qr.js', 'kit-qr.js')]
     if not a.no_relay:
         fixed += [('kit-relay.js', 'kit-relay.js'), ('api/log.js', 'api-log.js'),
                   ('api/reports.js', 'api-reports.js'), ('package.json', 'package.json')]
@@ -420,7 +449,7 @@ def build(a):
     # 5. report + a manifest a publish step can verify the hosted copies against
     def kb(s): return '%.1f KB' % (len(s.encode('utf-8')) / 1024)
     out_man = {'kit': v, 'aframe': a.aframe, 'libBase': L, 'build': build_no, 'slug': slug,
-               'extraLibs': extra_libs, 'noindex': not a.indexable, 'files': {}}
+               'extraLibs': extra_libs, 'noindex': not a.indexable, 'qrUrl': qr_url, 'files': {}}
     print('source page    ', kb(src))
     for name, text in lib.items():
         h = hashlib.sha256(text.encode('utf-8')).hexdigest()
@@ -453,6 +482,8 @@ def build(a):
                               'restoredFrom': cur.get('restoredFrom')}
         print('version %d — "%s" — fingerprint %s (%d version%s in the history)'
               % (cur['version'], cur['note'], cur['sha1'][:8], len(versions), '' if len(versions) == 1 else 's'))
+    if not a.no_qr:
+        print('QR on the page  %s' % (qr_url + ' (+ /v/<N>/ on version pages)' if qr_url else 'no address known yet: the page will use its own'))
     if extra_libs: print('extra libraries to host at', L + ':', ', '.join(extra_libs))
     json.dump(out_man, open(os.path.join(out, 'manifest.json'), 'w', encoding='utf-8'), indent=2)
 
@@ -522,8 +553,10 @@ def unslim(a):
             raise SystemExit('could not find the %s reference in this page' % what)
         page = new
 
-    # the relay tag goes; it belongs to the published copy, not the source
-    page = re.sub(r'\n?<script src="\./kit-relay\.js"></script>', '', page, count=1)
+    # the relay and QR lines go; they belong to the published copy, not the source
+    page = re.sub(r'\n?<script src="\.?/kit-relay\.js"></script>', '', page, count=1)
+    page = re.sub(r'<meta name="%s" content="[^"]*">\s*' % QR_META, '', page, count=1)
+    page = re.sub(r'<script src="/kit-qr\.js"></script>\n?', '', page, count=1)
     one(r'<script src="[^"]*/xr-kit-panel-%s\.js"></script>' % ver, '<script>\n' + panel_js + '\n</script>', 'status panel')
     one(r'<script src="[^"]*/xr-kit-%s\.js"></script>' % ver, '<script>\n' + xrkit_js + '\n</script>', 'xr-kit component')
     one(r'<link rel="stylesheet" href="[^"]*/xr-kit-%s\.css">' % ver, '<style>\n' + css + '\n</style>', 'stylesheet')
@@ -554,6 +587,8 @@ def main():
                     help="library version label; 'auto' = 12-hex hash of the extracted plumbing, so any app maps to exactly the files built from its own template")
     ap.add_argument('--aframe', default='auto', help="A-Frame release to load from aframe.io; 'auto' reads it from the app's bundled aframe.min.js")
     ap.add_argument('--out', default=None)
+    ap.add_argument('--url', default=None, help="the app's public address for the on-page QR code (default: vercel.url in xr-project.json)")
+    ap.add_argument('--no-qr', action='store_true', help='leave out the on-page QR code')
     ap.add_argument('--no-relay', action='store_true', help='leave out kit-relay.js and the api/ functions (static page only)')
     ap.add_argument('--indexable', action='store_true', help='do not add the vercel.json that keeps the page out of search engines')
     ap.add_argument('--unslim', metavar='PAGE', default=None,
