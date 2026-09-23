@@ -15,7 +15,7 @@ description: >
   changed in version 4", "go back to version 4", "put the old version back",
   "call this version …" and "what's the fingerprint of this version".
 metadata:
-  version: "0.6.0"
+  version: "0.6.1"
 ---
 
 # Publish to Vercel
@@ -151,6 +151,8 @@ for older versions that are never re-sent), `history` (`current`, `note`,
 plumbing, so every app made from the same template shares it), `libBase`
 (`https://xr-kit-lib-<kit>.vercel.app`), `aframe`, `extraLibs`, and the
 sha256 of every file.
+
+The build also writes any `\uXXXX` / `\xXX` escape for a character above U+007F in the page as the plain character (it prints how many), because the upload can do that conversion on its own and the fingerprint would then no longer match. If a publish ever reports a fingerprint mismatch anyway, rebuild from the app's `index.html` and publish again; never hand-edit the page or the recorded fingerprint to make them agree.
 
 Re-running the build for the same build number (a publish that failed, an
 unchanged source) replaces that version's entry rather than adding another,

@@ -269,6 +269,26 @@ def stamp(text, marker, value):
     return re.sub(r'/\*%s\*/(\[\[.*?\]\]|\[\]|\d+)' % re.escape(marker), '/*%s*/%s' % (marker, value), text, count=1)
 
 
+# \u2014, \u2019, \xB7 … inside the app's own script are sometimes turned into
+# the literal character on the way to Vercel (same meaning, different bytes),
+# which breaks the version fingerprint. So the page is built with them written
+# plainly already. Only characters above U+007F are touched — quotes,
+# backslashes, newlines and other control escapes keep their escaped form —
+# and an escaped backslash ("\\u2014" in the source) is left alone.
+_ESC = re.compile(r'(?<!\\)((?:\\\\)*)\\(?:u([0-9a-fA-F]{4})|x([0-9a-fA-F]{2}))')
+
+
+def plain_characters(text):
+    count = [0]
+    def sub(m):
+        cp = int(m.group(2) or m.group(3), 16)
+        if cp < 0x80 or 0xD800 <= cp <= 0xDFFF:
+            return m.group(0)
+        count[0] += 1
+        return m.group(1) + chr(cp)
+    return _ESC.sub(sub, text), count[0]
+
+
 def sha1_bytes(text):
     b = text.encode('utf-8')
     return hashlib.sha1(b).hexdigest(), len(b)
@@ -348,6 +368,9 @@ def build(a):
     source_meta = ('<meta name="%s" content="kit=%s; build=%d; slug=%s; aframe=%s; lib=%s">'
                    % (SOURCE_META, v, build_no, slug, a.aframe, L))
     page = re.sub(r'(<meta charset="[^"]*">)', r'\1\n' + source_meta.replace('\\', '\\\\'), page, count=1)
+    page, plained = plain_characters(page)
+    if plained:
+        print('wrote %d special character%s plainly (so the fingerprint survives the upload)' % (plained, '' if plained == 1 else 's'))
     open(os.path.join(out, 'page', 'index.html'), 'w', encoding='utf-8', newline='\n').write(page)
 
     # 4. the rest of the deploy set. Everything except index.html is the same

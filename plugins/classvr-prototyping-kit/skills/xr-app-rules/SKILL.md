@@ -9,7 +9,7 @@ description: >
   an app working on a ClassVR headset, so ordinary prompts don't reintroduce known
   failures.
 metadata:
-  version: "0.6.0"
+  version: "0.6.1"
 ---
 
 # Rules for editing a kit XR app
@@ -32,6 +32,8 @@ files beside `index.html`; assets are data URIs or separate ClassCloud uploads.
 The published file is content-addressed and has no relative paths, and school
 networks block arbitrary hosts. A CDN 404 fails silently and the page still
 looks like a working app.
+
+**Write special characters as themselves.** A long dash, curly apostrophe, degree sign or accented letter goes into the file as the character itself (`'Don’t — go'`), never as an escape like `\u2014` or `\u2019`. Escapes can be turned into the plain character on the way to Vercel or into a file, which changes the version's fingerprint and makes the next publish fail its check. Quote marks and line breaks inside strings are the exception: keep those escaped (`\'`, `\n`). In HTML text, the character itself or a named entity (`&mdash;`) are both fine.
 
 **Coordinates are metres; −Z is in front of the player.** The rig sits on the
 floor at the origin; the headset supplies eye height. Comfortable interaction
