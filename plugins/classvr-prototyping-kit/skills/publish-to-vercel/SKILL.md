@@ -15,7 +15,7 @@ description: >
   changed in version 4", "go back to version 4", "put the old version back",
   "call this version …" and "what's the fingerprint of this version".
 metadata:
-  version: "0.5.0"
+  version: "0.6.0"
 ---
 
 # Publish to Vercel
@@ -51,6 +51,9 @@ ClassCloud publish keep working, on the same build numbers.
 
 - The app live at a stable public URL `https://<project>.vercel.app`
 - Its history at `<url>/history`, every version at `<url>/v/<N>/`
+- The same page kept in the app folder as `versions/Versions 1 - 10/03-index.html`
+  with `03-README.txt` beside it (ten versions to a sub-folder), so going
+  back never needs a download for the person's own app
 - `xr-project.json` carrying `vercel.project`, `vercel.projectId`,
   `vercel.url`, `vercel.deploymentId`, `vercel.build`, `vercel.teamId`,
   `vercel.lib`, `vercel.owner`, `vercel.store`, and `vercel.versions` (one
@@ -136,9 +139,11 @@ page), `v/<N>/index.html` (the same page, at its permanent address),
 `history.json`, `history/index.html`, `kit-relay.js`, `api/log.js`,
 `api/reports.js`, `package.json` and `vercel.json` — plus `lib/*` (the four
 library files for this template version) and `manifest.json`. It also
-records this version in the project's `xr-project.json` (`vercel.versions`),
-so **the project's manifest changed** and must be written back in step 9
-even when the source did not bump. Read the manifest: `deploy` (the complete
+records this version in the project's `xr-project.json` (`vercel.versions`)
+and keeps the page in the project as `versions/Versions <A> - <B>/<NN>-index.html`
+plus `<NN>-README.txt` (the note, date, fingerprint and how to use it), so
+**the project changed** — the manifest and the two new files under
+`versions/` must be written back in step 9 even when the source did not bump. Read the manifest: `deploy` (the complete
 file list, including every older `v/<M>/index.html`), `deployFiles` (each
 file's `sha1`, `size`, whether it is `reusable`, and `byFingerprint: true`
 for older versions that are never re-sent), `history` (`current`, `note`,
@@ -306,7 +311,8 @@ regenerate only if `vercel.url` changed.
 ### 9. Write back and report
 
 Write `xr-project.json` (it always changed: `vercel.versions` gained an
-entry) — and `index.html` if `bumped` — and `vercel-qr.png`
+entry), the two new files under `versions/` (the build printed their path),
+`index.html` if `bumped`, and `vercel-qr.png`
 back to the user's folder (Cowork: `SendUserFile` `display: "attach"`, then
 `device_commit_files`; in a repo, commit them as any other edit). Render
 `vercel-qr.png` **last** (`display: "render"`), with the URL on its own line
@@ -344,15 +350,27 @@ Vercel plan and the history stays a straight line:
    `current` in `history.json`. A number = that number. Confirm in half a
    sentence what it contains (its note) before doing it if there is any
    doubt.
-2. Fetch `<vercel.url>/v/<M>/index.html` with `web_fetch_vercel_url` and
-   save it as `<scratch>/restore.html`. Fetch the four library files the
-   page names (`/copy-xr-app` step 4 lists them) into `<scratch>/lib/` if
-   they are not already at hand.
+2. **Look in the app folder first** — this is the normal case and needs no
+   download:
+
+       python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/vercel_build.py \
+           "<project>" --local-version <M>
+
+   `ok: true` → `path` is the kept page and its fingerprint matches what was
+   recorded at publish time; use it as `<restore page>` below. (In a Cowork
+   session stage `versions/Versions <A> - <B>/<MM>-index.html` alongside the
+   project first; `<A>` = the multiple of ten below M plus one.) `ok: false`
+   → the file is missing or was altered: say so in half a sentence and fall
+   back to the live address: `web_fetch_vercel_url`
+   `<vercel.url>/v/<M>/index.html`, saved as `<scratch>/restore.html`.
+   Either way, the four library files the page names (`/copy-xr-app` step 4
+   lists them) go into `<scratch>/lib/`; the current build's `lib/` output
+   already has them when the kit version matches.
 3. Rebuild the source and put it in place of the app's `index.html`:
 
        python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/vercel_build.py \
-           --unslim "<scratch>/restore.html" --lib-dir "<scratch>/lib" \
-           --out "<project>/index.html" --expect-sha1 <that version's sha1 from history.json>
+           --unslim "<restore page>" --lib-dir "<scratch>/lib" \
+           --out "<project>/index.html" --expect-sha1 <that version's sha1 from vercel.versions>
 
    `--expect-sha1` refuses a page that does not match the history — fetch
    again rather than restoring something unverified.
@@ -448,6 +466,10 @@ from the build, or rebuild it); an error inside the shared library is coded
   Versions published before kit 0.25 are not in it — an app already on
   Vercel starts its history at the first publish made with this version, and
   `vercel.versions` starts at whatever `build` is then.
+- The `versions/` folder is a convenience copy: deleting or moving it breaks
+  nothing (go-back falls back to the live address), and the kit never edits
+  an app from it — `index.html` is always the source. Ten versions per
+  sub-folder, two-digit numbers; version 100 onwards simply gets three.
 - Old versions live in the *latest* deployment (by fingerprint), so the
   history does not depend on Vercel keeping old deployments. It does depend
   on Vercel keeping a file's bytes while a live deployment references them,

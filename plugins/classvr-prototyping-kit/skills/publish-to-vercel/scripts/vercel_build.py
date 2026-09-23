@@ -43,10 +43,22 @@ page fetched from /v/4/ (unslimmed back into index.html) with
 "what changed" line; without it the note is "Version N" (or the note already
 recorded for that build).
 
+Every published page is also kept in the app's own folder, ten to a
+sub-folder, with a plain-words note beside it:
+
+  versions/Versions 1 - 10/03-index.html     exactly what went live as version 3
+  versions/Versions 1 - 10/03-README.txt     what changed, when, fingerprint
+
+so "go back to version 3" on the person's own app needs no download at all
+(`--local-version 3` finds the file and checks its fingerprint), and the
+history travels with the folder. `--no-local-versions` turns it off.
+
 Usage:
   vercel_build.py <app folder> [--lib-base https://…] [--kit-version auto|label]
                   [--aframe auto|X.Y.Z] [--out <dir>] [--no-relay] [--indexable]
                   [--note "what changed"] [--restored-from N] [--no-history]
+                  [--no-local-versions]
+  vercel_build.py <app folder> --local-version N
 
   vercel_build.py --unslim <published index.html> --lib-dir <dir> --out <file>
                   [--expect-sha1 <40 hex>]
@@ -105,6 +117,57 @@ def record_version(manifest, build_no, sha1, size, note, restored_from):
     versions.sort(key=lambda v: v['version'])
     vc['versions'] = versions
     return versions
+
+
+VERSIONS_DIR = 'versions'
+GROUP = 10
+
+
+def versions_group(n):
+    """'Versions 1 - 10', 'Versions 11 - 20', … — ten to a folder, so a long
+    history stays browsable in a file explorer."""
+    lo = ((n - 1) // GROUP) * GROUP + 1
+    return 'Versions %d - %d' % (lo, lo + GROUP - 1)
+
+
+def local_version_paths(app_dir, n):
+    folder = os.path.join(app_dir, VERSIONS_DIR, versions_group(n))
+    return folder, os.path.join(folder, '%02d-index.html' % n), os.path.join(folder, '%02d-README.txt' % n)
+
+
+def version_readme(manifest, entry, url):
+    """The tiny note that sits beside each saved version, in plain words."""
+    app = manifest.get('name') or manifest.get('slug') or 'this app'
+    lines = [
+        '%s — version %d' % (app, entry['version']),
+        '',
+        'What changed: %s' % entry.get('note', ''),
+        'Saved: %s (UTC)' % entry.get('date', '').replace('T', ' ').rstrip('Z'),
+        'Fingerprint: %s  (full: %s)' % (entry['sha1'][:8], entry['sha1']),
+    ]
+    if entry.get('restoredFrom') is not None:
+        lines.append('This version put version %d back.' % entry['restoredFrom'])
+    if url:
+        lines.append('Live at: %s/v/%d/' % (url.rstrip('/'), entry['version']))
+    lines += [
+        '',
+        'The file beside this note, %02d-index.html, is exactly what was published as' % entry['version'],
+        'version %d. It is kept so you can go back to it later — just ask Claude:' % entry['version'],
+        '"go back to version %d". Please don\'t edit it; edit the app\'s own index.html' % entry['version'],
+        'in the folder above and publish again, and a new version will be saved here.',
+        '',
+        'The fingerprint is a short code worked out from the file itself. If two people',
+        'quote the same fingerprint they are looking at exactly the same version.',
+    ]
+    return '\n'.join(lines) + '\n'
+
+
+def save_local_version(app_dir, manifest, entry, page, url):
+    folder, page_path, readme_path = local_version_paths(app_dir, entry['version'])
+    os.makedirs(folder, exist_ok=True)
+    open(page_path, 'w', encoding='utf-8', newline='\n').write(page)
+    open(readme_path, 'w', encoding='utf-8', newline='\n').write(version_readme(manifest, entry, url))
+    return page_path, readme_path
 
 
 def history_document(manifest, versions):
@@ -307,6 +370,13 @@ def build(a):
                 by_fingerprint[version_path(old['version'])] = (old['sha1'], old['size'])
         deploy[HISTORY_JSON] = json.dumps(doc, indent=2) + '\n'
         deploy[HISTORY_PAGE] = history_page(doc)
+        # 4b. the same page kept in the app's own folder — versions/Versions 1 - 10/
+        #     03-index.html + 03-README.txt — so "go back" never needs a download
+        #     for the person's own app, and the history travels with the folder
+        if not a.no_local_versions:
+            cur = next(v2 for v2 in versions if v2['version'] == build_no)
+            saved_page, saved_readme = save_local_version(a.app, manifest, cur, page, (manifest.get('vercel') or {}).get('url'))
+            print('kept locally     %s' % os.path.relpath(saved_page, a.app))
         for name in (version_path(build_no), HISTORY_JSON, HISTORY_PAGE):
             dest = os.path.join(out, 'page', name)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -362,6 +432,31 @@ def build(a):
               % (cur['version'], cur['note'], cur['sha1'][:8], len(versions), '' if len(versions) == 1 else 's'))
     if extra_libs: print('extra libraries to host at', L + ':', ', '.join(extra_libs))
     json.dump(out_man, open(os.path.join(out, 'manifest.json'), 'w', encoding='utf-8'), indent=2)
+
+
+# ---------------------------------------------------------------- local version
+
+def local_version(a):
+    manifest = json.load(open(os.path.join(a.app, 'xr-project.json'), encoding='utf-8'))
+    versions = (manifest.get('vercel') or {}).get('versions') or []
+    entry = next((v for v in versions if v.get('version') == a.local_version), None)
+    folder, page_path, readme_path = local_version_paths(a.app, a.local_version)
+    out = {'version': a.local_version, 'path': page_path, 'readme': readme_path,
+           'recorded': bool(entry), 'exists': os.path.exists(page_path)}
+    if entry:
+        out['sha1'] = entry['sha1']; out['note'] = entry.get('note'); out['date'] = entry.get('date')
+    if out['exists']:
+        s1, n = sha1_bytes(open(page_path, encoding='utf-8', newline='').read())
+        out['fileSha1'] = s1; out['bytes'] = n
+        out['ok'] = bool(entry) and s1 == entry['sha1']
+        if not out['ok']:
+            out['reason'] = ('no entry for version %d in xr-project.json' % a.local_version) if not entry else \
+                            'the kept file does not match the fingerprint recorded at publish time — fetch /v/%d/ from the live address instead' % a.local_version
+    else:
+        out['ok'] = False
+        out['reason'] = 'version %d is not kept in this folder — fetch /v/%d/ from the live address instead' % (a.local_version, a.local_version)
+    print(json.dumps(out, indent=2))
+    return 0 if out['ok'] else 1
 
 
 # ---------------------------------------------------------------- unslim
@@ -447,6 +542,10 @@ def main():
     ap.add_argument('--restored-from', type=int, default=None, metavar='N',
                     help='this publish puts version N back (its page was fetched from /v/N/ and unslimmed into index.html first)')
     ap.add_argument('--no-history', action='store_true', help='leave out history.json, the history page and v/<N>/ (not the default)')
+    ap.add_argument('--no-local-versions', action='store_true',
+                    help="do not keep a copy of the published page under <app>/versions/ (not the default)")
+    ap.add_argument('--local-version', type=int, default=None, metavar='N',
+                    help="print the path of version N kept under <app>/versions/ (and check its fingerprint against xr-project.json), then exit")
     a = ap.parse_args()
     if a.unslim:
         if not a.lib_dir or not a.out:
@@ -454,6 +553,8 @@ def main():
         return unslim(a)
     if not a.app:
         raise SystemExit('give an app folder, or --unslim a published page')
+    if a.local_version is not None:
+        return local_version(a)
     return build(a)
 
 

@@ -14,7 +14,7 @@ description: >
   their own. Nothing is needed from the person who made the original — no
   files sent, no repository, no account shared.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # Copy an XR app
@@ -57,6 +57,16 @@ Then the page to copy is `<address>/v/<N>/` and its expected fingerprint is
 that entry's `sha1`. No `history.json` (404) → an app published before the
 kit kept versions; only the current page can be copied — say so in one line
 if they asked for an older one.
+
+**A folder instead of an address.** If the person has the app's folder (their
+own, or one a colleague gave them) it carries the history too: every
+published version sits under `versions/Versions <A> - <B>/<NN>-index.html`
+with a `<NN>-README.txt` beside it, and `xr-project.json` → `vercel.versions`
+holds the fingerprints. Pick the version there, check it with
+`vercel_build.py "<folder>" --local-version <N>` (`ok: true` = the file
+matches its fingerprint) and use that file as `published.html` in step 2 —
+no download at all. A folder without `versions/` (made before kit 0.26, or
+never published to Vercel) → copy its `index.html` as the current version.
 
 If they only have a QR code, ask them to paste the address it opens, or read
 it in the browser pane.
