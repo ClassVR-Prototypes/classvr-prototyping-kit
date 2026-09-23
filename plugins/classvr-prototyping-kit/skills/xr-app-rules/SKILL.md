@@ -5,11 +5,12 @@ description: >
   with the ClassVR Prototyping Kit — any folder containing xr-project.json — including
   requests like "add a table", "make the ball bounce", "put a sign here", "add text",
   "the throw feels weak", "it looks washed out on the headset", "the button doesn't
-  work in VR", or "why can't I grab it". It holds the hard-won constraints that keep
+  work in VR", "add passthrough", "let me see my room", or "why can't I grab it".
+  It holds the hard-won constraints that keep
   an app working on a ClassVR headset, so ordinary prompts don't reintroduce known
-  failures.
+  failures, plus ready recipes such as passthrough (AR).
 metadata:
-  version: "0.6.1"
+  version: "0.7.0"
 ---
 
 # Rules for editing a kit XR app
@@ -70,9 +71,11 @@ apply to every edit without reading it:
   them — Wolvic keeps them and they never reach the page. Triggers, grips,
   sticks and A/B/X/Y are the app's, within the kit's reservations below. No
   hand tracking (disabled in this Wolvic build).
-- **Web platform:** Chrome 124. WebGL 2 and WebXR `immersive-vr` only — no
-  WebGPU, WebXR layers, AR or hand-tracking APIs. WebXR permission is granted
-  without a prompt; the UA does not say "Wolvic".
+- **Web platform:** Chrome 124. WebGL 2, WebXR `immersive-vr` and
+  `immersive-ar` (passthrough — see "Passthrough" below) — no WebGPU, WebXR
+  layers or hand-tracking APIs, and no other AR features (hit-test, anchors,
+  planes, depth) until one is tested on the headset. WebXR permission is
+  granted without a prompt; the UA does not say "Wolvic".
 
 ## Controls list
 
@@ -227,6 +230,56 @@ sends. The right stick snap-turns as usual. So:
 
 Writing a component that must behave differently per target: read
 `this.el.sceneEl.components['xr-kit'].data.dof` — never the user agent.
+
+## Passthrough (the real room behind the scene)
+
+When someone asks for **passthrough**, "AR", "mixed reality", "see my room",
+"see the real world" or "make it float in the classroom", add it straight
+away with this recipe. **Proven on the ClassVR Xcelerate 23 Sep 2026**
+(Passthrough Test build 1): Wolvic offers `immersive-ar`, the session reports
+`environmentBlendMode: "alpha-blend"`, the room shows behind the scene at
+72 fps, controllers and the kit's colour fix work unchanged.
+
+1. **Offer both buttons.** Add `xr-mode-ui="enabled: true; XRMode: xr;
+   enterAREnabled: true"` to `<a-scene>` (keep the existing attributes —
+   A-Frame 1.7 reads `xr-mode-ui`; the template's `vr-mode-ui` is inert).
+   A-Frame then shows an **AR** button beside the VR button in the flat
+   window, and only where the browser supports `immersive-ar`, so desktop and
+   the artifact link are unaffected. Never enter AR automatically; the
+   player chooses AR or VR before going in (a session can't switch mode —
+   exit and press the other button).
+2. **Hide what would cover the room.** Add `hide-on-enter-ar` to the sky
+   (`a-sky`) and the floor (`[checker-ground]`) — never delete them, the
+   structure check expects both and VR still needs them — and to anything
+   else that surrounds the player (walls, a room, a dome, a big backdrop).
+   The scene's `background` colour is cleared in AR by A-Frame itself.
+3. **Place content for a real room.** The rig's floor is the real floor in
+   AR. Keep things 1–3 m in front, at 0.8–2 m high, nothing through where
+   furniture probably is; objects that sat on the virtual floor now sit on
+   the real one. Anything that only made sense on the green floor (a
+   painted track, floor markings) gets `hide-on-enter-ar` too, or a
+   `hide-on-enter-vr` counterpart if it should appear only in AR.
+4. **Record it.** In the app's component: on load log
+   `[passthrough] immersive-ar supported: <true|false>` from
+   `navigator.xr.isSessionSupported('immersive-ar')`, and on `enter-vr` log
+   whether it is AR (`sceneEl.is('ar-mode')`) and
+   `sceneEl.xrSession.environmentBlendMode`. These reach the diary (and
+   `/check-headset`) by themselves.
+5. **Controls line:** `'Or press the AR button instead to see your real room
+   around <the content> (passthrough)'` after the "Press the VR button"
+   line in `KIT_CONTROLS.headset`.
+6. **Self-check:** `'the sky and floor disappear in passthrough, and come
+   back after'` — `s.addState('ar-mode'); s.emit('enter-vr')`, expect the
+   sky and floor `object3D.visible === false`, then `s.removeState('ar-mode');
+   s.emit('exit-vr')` and expect them visible again. Plus one that
+   `getAttribute('xr-mode-ui').XRMode === 'xr'`.
+
+Colour needs nothing extra: A-Frame's AR entry goes through `enterVR`, so the
+kit's linear-output wrapper applies. In a **3DoF** app passthrough works on
+the Xcelerate (the head lock still applies), but real 3DoF ClassVR headsets
+have no passthrough — say so in one line when the app is `dof: 3`.
+The reference app is `15 - Passthrough Test/Passthrough Test/` in the
+project folder (five boxes, a mode sign reading "Passthrough (AR)").
 
 ## Colour on the headset
 

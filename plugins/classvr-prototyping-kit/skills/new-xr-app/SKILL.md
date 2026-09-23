@@ -198,7 +198,7 @@ Every app leaves this skill with a link recorded in `xr-project.json`.
 
 One or two sentences: the folder name; if a concept was built, what the game
 does in one line and how to play it (click to look, W/A/S/D to move, Q/E to
-turn; on a headset, **Enter VR**); then how to get it on a headset — on route A
+turn; on a headset, **Enter VR**); then how to get it on a headset — on routes A and C
 "the page has a QR code in its top-right corner — click it to enlarge, then
 point the headset's scanner at it", on route B
 "`/publish-xr-app` puts it on the headset". Do not explain libraries,
@@ -214,8 +214,8 @@ manifests, artifacts, git, or build numbers unless asked.
   Pages setting — say so if the share skill just added the workflows.
 - Route B: the artifact card is the last thing the turn produces; don't paste
   the URL as well.
-- Route C: the Vercel URL on its own line, then the QR code rendered **last**;
-  "scan it on the headset and press the VR button" — it is live at once.
+- Route C: **the Vercel URL is the last line of the reply, on its own line** —
+  it is live at once. No QR image: the page shows its own.
 
 Do **not** render `preview.png` in either case — a screenshot would only push
 the link away. Project files are attached, not rendered.

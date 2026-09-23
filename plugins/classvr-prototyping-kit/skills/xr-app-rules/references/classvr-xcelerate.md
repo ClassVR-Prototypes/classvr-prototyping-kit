@@ -48,8 +48,9 @@ Sources:
 i.e. Wolvic 1.8.x), built with the **Chromium backend** on the **Snapdragon
 Spaces** OpenXR flavour. The web engine is a prebuilt **Chromium
 124.0.6367.221** (`CHROMIUM_PREBUILT_AARS/Content.aar`). So the web platform
-is *Chrome 124 on Android*: WebGL 2 yes, WebXR `immersive-vr` yes; no WebXR
-layers, no `immersive-ar`, no hand tracking (see below), and assume no WebGPU.
+is *Chrome 124 on Android*: WebGL 2 yes, WebXR `immersive-vr` yes,
+**`immersive-ar` (passthrough) yes** (see "Passthrough" below); no WebXR
+layers, no hand tracking (see below), and assume no WebGPU.
 
 **User agent.** Chromium's Android "Mobile VR" UA — roughly
 `Mozilla/5.0 (Linux; Android 12; …) AppleWebKit/537.36 … Chrome/124.0.0.0
@@ -126,7 +127,23 @@ release build is not minified — this is the logbook channel
 (`check-headset/references/logbook.md`). Web console output is **not**
 forwarded to the log.
 
+**Passthrough.** The fork carries upstream Wolvic's WebXR AR module
+(commit 31b452ac4, Aug 2024, "[OpenXR] Add basic support for WebXR AR
+module"): an `immersive-ar` session is offered wherever the OpenXR runtime
+provides passthrough, through a non-opaque environment blend mode or the
+`XR_FB_passthrough` layer (`DeviceDelegateOpenXR.cpp`, `InitializeBlendModes`
+and the passthrough-strategy choice). No Avantis commit touches it.
+`isPassthroughSupported()` is true for Spaces builds, which is why Wolvic's
+own menu has "Toggle passthrough" (available in kiosk mode too).
+
 ## Observed on the headset (kit runs)
+
+- **Passthrough works** (Passthrough Test build 1, 23 Sep 2026):
+  `isSessionSupported('immersive-ar')` → true; the AR button entered an AR
+  session with `environmentBlendMode` **`alpha-blend`**; the room showed
+  behind the boxes; 72 fps in AR; meta-touch controllers as usual. Wolvic's
+  browser-level "Toggle passthrough" also works. Recipe: `xr-app-rules`,
+  "Passthrough".
 
 - Controllers report as `meta-touch`; VR enter/exit, flags and 72 fps all
   read back through the logbook (Logbook Test build 2, 8 Sep 2026).
@@ -138,7 +155,7 @@ forwarded to the log.
 
 ## Unknown — fill in when found, never invent
 
-Battery life, weight, IPD adjustment range, cameras / passthrough, audio
+Battery life, weight, IPD adjustment range, the cameras themselves (passthrough works — see above), audio
 (speakers, jack), the tracking volume, the exact runtime-advertised refresh
 rate list (72 is inferred from the measured fps and the selection rule), and
 whether ClassCloud preserves the `wolvic-launchimmersive-…` query parameter
@@ -166,6 +183,7 @@ turn). Menu, System, Back and volume never arrive. No hand tracking, no
 headset-gaze input from the runtime — the kit's 3DoF gaze select is its own.
 
 **Web platform.** Write for Chrome 124: WebGL 2 and three.js r173's default
-path are fine; don't reach for WebGPU, WebXR layers, AR or hand-tracking
-APIs. The colour-space rule (linear out in VR) is about Wolvic's compositor,
+path are fine, and so is `immersive-ar` for passthrough; don't reach for
+WebGPU, WebXR layers, other AR features (hit-test, anchors, planes) or
+hand-tracking APIs until they are tested here. The colour-space rule (linear out in VR) is about Wolvic's compositor,
 not the GPU.

@@ -8,14 +8,14 @@ description: >
   when the user names Vercel or the app's xr-project.json has `vercel.url`, and
   then used after every edit. It builds a slim page that loads the kit's
   plumbing from a shared library, deploys it through the Vercel connector — no
-  Git, no terminal — verifies it live at a stable public URL and ends with the
-  headset QR code. The app's diary lands in the same project, so "what went
+  Git, no terminal — verifies it live at a stable public URL and ends with that
+  link (the page draws its own headset QR code). The app's diary lands in the same project, so "what went
   wrong on the headset?" is answered from the connector's runtime logs. Every
   publish is a saved version: also use for "show me the versions", "what
   changed in version 4", "go back to version 4", "put the old version back",
   "call this version …" and "what's the fingerprint of this version".
 metadata:
-  version: "0.7.0"
+  version: "0.7.1"
 ---
 
 # Publish to Vercel
@@ -64,7 +64,8 @@ ClassCloud publish keep working, on the same build numbers.
   `vercel.lib`, `vercel.owner`, `vercel.store`, and `vercel.versions` (one
   entry per version: number, date, note, fingerprint, size, and
   `restoredFrom` when it put an older version back — written by the build)
-- `vercel-qr.png` in the app folder, and rendered as the **last thing in the turn**
+- The URL as the **last line of the reply**, on its own line — no QR image in
+  the chat: the page shows its own code
 - `index.html` written back if the build number bumped
 
 ## Before starting
@@ -332,33 +333,32 @@ open `vercel.url?kitcheck` and read `window.KIT.report()` and
 `window.KIT.checkResults`: scene loaded, 0 errors, the Enter VR button present
 (`.a-enter-vr-button`). The "player can walk forward" self-check fails in the
 pane (synthetic keys) — ignore that one there; `preview.py` covered it. If the
-live page is wrong, say so and fix before showing the QR.
+live page is wrong, say so and fix before giving the link.
 
-### 8. QR code
+### 8. No QR image
 
-    python3 -c "import qrcode; qrcode.make('<vercel.url>/', box_size=12, border=4).save('<project>/vercel-qr.png')"
+The page draws its own QR code in its top-right corner, so **do not make or
+render a QR image** for the chat or the folder (a `vercel-qr.png` left in an
+app folder by an older kit is harmless; leave it). Only if the person asks for
+a code to print or put on a slide:
 
-(`pip install qrcode pillow --break-system-packages` if the module is
-missing.) The address never changes for the app, so the file is made once;
-regenerate only if `vercel.url` changed. This PNG is for the chat and the
-folder; the page itself draws the same code in its corner.
+    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/make_qr.py \
+        --url "<vercel.url>/" --out "<project>/vercel-qr.png"
 
 ### 9. Write back and report
 
 Write `xr-project.json` (it always changed: `vercel.versions` gained an
 entry), the two new files under `versions/` (the build printed their path),
-`index.html` if `bumped`, and `vercel-qr.png`
+and `index.html` if `bumped`
 back to the user's folder (Cowork: `SendUserFile` `display: "attach"`, then
-`device_commit_files`; in a repo, commit them as any other edit). Render
-`vercel-qr.png` **last** (`display: "render"`), with the URL on its own line
-just above it.
+`device_commit_files`; in a repo, commit them as any other edit). Nothing is
+rendered: **the URL is the last line of the reply, on its own line**, so the
+person can click it straight away.
 
 One or two sentences, in the kit's voice: the app name, that **version N** is
 live ("saved as version 3 — added a lap counter"), open the address in any
-browser, scan the QR on a ClassVR headset and press the VR button. First
-publish of an app, or the first after kit 0.27: add that the page shows its
-own QR code in the corner, so anyone with the page open can scan it (click it
-to make it bigger). First
+browser; for a headset, click the QR code in the page's top-right corner to
+enlarge it, scan it with the ClassVR scanner and press the VR button. First
 publish only: "the page is public — anyone with the address can open it" (it
 is kept out of search engines, but that is not worth saying unless asked),
 and mention once that every version is kept and `<url>/history` lists them.
@@ -483,7 +483,7 @@ from the build, or rebuild it); an error inside the shared library is coded
   lags the folder. Source unchanged (not bumped) → nothing to publish; say so
   only if the user expected a change.
 - **Combined create-and-host** ("make X, host it on Vercel"): `/new-xr-app`
-  1–6, then this skill 1–9 in one turn; the QR is the last thing shown.
+  1–6, then this skill 1–9 in one turn; the link is the last line.
 
 ## Known limits
 
