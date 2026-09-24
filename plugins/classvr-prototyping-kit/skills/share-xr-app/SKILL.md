@@ -27,10 +27,10 @@ There are two kinds of link, and **where the app lives decides which**:
 |---|---|---|---|
 | inside a git repository with a GitHub remote | **A — GitHub Pages** | `https://<owner>.github.io/<repo>/<slug>/` | **Yes** — a plain HTTPS page; the page shows its own QR code for the headset to scan |
 | a plain folder (Cowork, a local session, no repo) | **B — Claude Artifact** | `https://claude.ai/…/artifact/…` | No — the viewer's frame blocks WebXR |
-| anywhere, when the user has chosen **Vercel** (or the manifest already has `vercel.url`) | **C — Vercel** (`/publish-to-vercel`) | `https://<project>.vercel.app` | **Yes** — a plain HTTPS page, published through the Vercel connector; the page shows its own QR code for the headset to scan |
+| anywhere, when the user has chosen **Vercel** (or the manifest already has `vercel.url`) | **C — Vercel** (`/publish-to-vercel`) | `https://<project>.vercel.app` | **Yes** — a plain HTTPS page, published with the person's own Vercel token (`/connect-vercel`) or the Vercel connector; the page shows its own QR code for the headset to scan |
 
-Route A is preferred whenever it is available. Route C is opt-in: it needs the
-Vercel connector on in the chat, and is chosen only when the user names
+Route A is preferred whenever it is available. Route C is opt-in: it needs a
+Vercel connection (`/connect-vercel` once, or the Vercel connector), and is chosen only when the user names
 Vercel or the app has been published there before — then it replaces both A
 and B for that app, and `/publish-to-vercel` carries the whole flow. The headset route through
 ClassCloud (`/publish-xr-app`) still exists and shares the same build numbers;

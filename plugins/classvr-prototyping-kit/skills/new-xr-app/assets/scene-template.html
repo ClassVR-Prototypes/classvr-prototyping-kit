@@ -545,6 +545,24 @@ window.KIT = (function () {
     #kit-panel .sub h4 { font-size: 11px; margin: 4px 0 1px; }
   }
   #kit-panel .sub li { margin: 1px 0; }
+  /* Minimise button, top right. The panel ignores the mouse so the scene
+     underneath stays clickable; only this button takes clicks. Minimised, the
+     panel shows just the app's name and build number. */
+  #kit-panel > b { padding-right: 26px; }
+  #kit-panel .kit-min {
+    position: absolute; top: 7px; right: 7px; width: 22px; height: 22px;
+    padding: 0; margin: 0; pointer-events: auto; cursor: pointer;
+    font: 600 16px/20px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    text-align: center; color: #40505f; background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(64, 80, 95, 0.25); border-radius: 6px;
+  }
+  #kit-panel .kit-min:hover { background: #e8f1f7; }
+  #kit-panel.min .kit-body { display: none; }
+  #kit-panel.min .build { margin-bottom: 0; }
+  @media (max-width: 700px), (max-height: 520px) {
+    #kit-panel .kit-min { top: 5px; right: 5px; width: 18px; height: 18px; font-size: 13px; line-height: 16px; }
+    #kit-panel > b { padding-right: 22px; }
+  }
 
 
   /* Desktop reticle: a small ring at the screen centre showing where the gaze
@@ -1423,10 +1441,30 @@ AFRAME.registerComponent('xr-kit', {
     var framed = false;
     try { framed = window.top !== window.self; } catch (e) { framed = true; }
 
+    // Minimised or not is remembered in this browser, so a reload keeps it.
+    var minimised = false;
+    try { minimised = localStorage.getItem('kit-panel-min') === '1'; } catch (e) {}
+    function setMin(m) {
+      minimised = m;
+      try { localStorage.setItem('kit-panel-min', m ? '1' : '0'); } catch (e) {}
+      render();
+    }
+    el.addEventListener('mousedown', function (e) { if (e.target.closest('.kit-min')) e.stopPropagation(); });
+    el.addEventListener('click', function (e) {
+      if (!e.target.closest('.kit-min')) return;
+      e.preventDefault(); e.stopPropagation();
+      setMin(!minimised);
+    });
+
     function render() {
-      el.innerHTML = '<b>{{APP_NAME}}</b><span class="build">build ' + window.BUILD + '</span>' + targetLine()
+      el.classList.toggle('min', minimised);
+      el.innerHTML = '<b>{{APP_NAME}}</b>'
+        + '<button type="button" class="kit-min" title="' + (minimised ? 'Show everything' : 'Minimise') + '" aria-label="'
+        + (minimised ? 'Show everything' : 'Minimise') + '">' + (minimised ? '+' : '&minus;') + '</button>'
+        + '<span class="build">build ' + window.BUILD + '</span>'
+        + '<div class="kit-body">' + targetLine()
         + lines.join('') + xrLine + problemLine + flagLine + checksLine + mailboxLine
-        + controlsHtml();
+        + controlsHtml() + '</div>';
     }
     // Which headset the app is designed for. A 3DoF app is played on a 6DoF
     // headset with the head pinned in place, so the person holding it knows
@@ -1459,6 +1497,7 @@ AFRAME.registerComponent('xr-kit', {
                 : (lb && lb.on && window.KIT.headsetBrowser && window.KIT.headsetBrowser()) ? '— exit to the ClassVR Launcher when finished and Claude can collect what happened'
                 : '— tell Claude: "code ' + window.__kitFirstCode + '"';
         problemLine = row('Oops, something didn\'t work', false, how + (count > 1 ? ' (+' + (count - 1) + ' more)' : ''));
+        if (count === 1 && minimised) { setMin(false); return; }             // the first problem opens the panel again
         render();
       });
       window.KIT.on('flag', function (entry, n) {

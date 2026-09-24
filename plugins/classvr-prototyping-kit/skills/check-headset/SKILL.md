@@ -28,9 +28,12 @@ Then — if something broke — the fix, exactly as `xr-app-rules` describes.
 
 If `xr-project.json` has `vercel.url`, the app posts its diary to its own
 Vercel project as it runs — from the headset, a desktop browser or a shared
-link alike — and the Vercel connector reads it back in seconds, with no log
-request and no need for the headset to be on its home screen. Do this first,
-as `/publish-to-vercel` ("Reading what happened") describes:
+link alike — and it can be read back with no log request and no need for the
+headset to be on its home screen. Do this first, as `/publish-to-vercel`
+("Reading what happened") describes. **Token route** (the normal one — no
+connector; `vercel.via` is `"token"` or the connector is absent): go straight
+to the app's own history below, read in a built-in browser tab — it is
+public, so no token is needed to read it. **Connector:**
 `get_runtime_logs` with `projectId` = `vercel.projectId`, `teamId` =
 `vercel.teamId`, `deploymentId` = `vercel.deploymentId`, `since` = `"1h"`,
 `query` = `"kit-diary"`. The headset shows as an `Android … Mobile VR` user
@@ -38,9 +41,10 @@ agent. If sessions are there, go straight to step 6 with them. If nothing is
 there (the play was more than an hour ago on Vercel's free plan, or the
 connector is off in this chat), try the app's own history next — every session
 that reached VR or closed the page left a record that outlives the log:
-`web_fetch_vercel_url` on `<vercel.url>/api/reports` for a line per session
+`<vercel.url>/api/reports` (a browser tab, or `web_fetch_vercel_url`) for a line per session
 (add `?day=YYYY-MM-DD` for one day, `?session=<id>` for every diary entry of
-one). That answers "what happened in Tuesday's lesson?" on Friday. Only if
+one). A session is written when the player leaves VR or closes the page, so
+if they are still in VR, ask them to come out first. That answers "what happened in Tuesday's lesson?" on Friday. Only if
 both are empty, say so in one line and continue with the ClassCloud log
 below — it still works for these apps.
 

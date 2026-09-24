@@ -9,7 +9,7 @@ Things you can say:
 |---|---|
 | **"Make a new VR app called Planet Walk"** (`/new-xr-app`) | A folder appears with a working scene — checked green ground, blue sky, a VR rig with controllers, thumbstick movement and snap-turn — and the app opens on screen as a Claude Artifact with its own permanent link. Right-click and drag to look around, left-click presses; WASD moves, Q/E turn. If the name sounds like a game ("Bubble Pop") and you didn't say what it does, you're offered a few concepts — or the empty scene — and the one you pick is built as a first playable version. |
 | **"Share it" / "refresh the link"** (`/share-xr-app`) | The app is rebuilt, checked, and its link updated. In a GitHub repository (Claude Code) the link is a public **GitHub Pages** URL, which also works for Enter VR on a headset; elsewhere it is a Claude Artifact. Runs on its own after every edit, so the link is never behind, and the URL is put in the chat. |
-| **"Host it on Vercel"** (`/publish-to-vercel`) | Opt-in third kind of link, for Cowork sessions with the **Vercel connector** on: the app is rebuilt as a small page that loads the kit's plumbing from a shared, versioned library, deployed to `https://<app>.vercel.app` through the connector — no Git, no upload screen — verified live, and you get the link — the page shows its own QR code in the corner for a headset to scan. Enter VR works on a headset; updates are live in seconds; the page is kept out of search engines; and the app sends its diary to the same project, so "what went wrong?" is answered in seconds whether it was played on a headset, a desktop or a shared link — for weeks afterwards, not just the past hour. Say it when you create the app ("…hosted on Vercel") or any time after. **Every publish is a saved version**: `<app>.vercel.app/history` lists them all with a one-line note each, every one stays playable at `/v/<N>/`, "show me the versions" reads the list, and "go back to version 4" puts it back as a new version — nothing is ever lost. Each version is also kept in the app's own folder (`versions/Versions 1 - 10/04-index.html`, with a short README beside it), so going back needs no download and the history travels with the folder. |
+| **"Host it on Vercel"** (`/publish-to-vercel`) | Opt-in third kind of link, for Cowork sessions — connect your Vercel account once (**"connect my Vercel account"**, `/connect-vercel`: you make a token in Vercel and paste it into a box in Claude's browser; no connector needed): the app is rebuilt as a small page that loads the kit's plumbing from a shared, versioned library, deployed to `https://<app>.vercel.app` from Claude's built-in browser with your token — no Git, no upload screen — verified live, and you get the link — the page shows its own QR code in the corner for a headset to scan. Enter VR works on a headset; updates are live in seconds; the page is kept out of search engines; and the app sends its diary to the same project, so "what went wrong?" is answered in seconds whether it was played on a headset, a desktop or a shared link — for weeks afterwards, not just the past hour. Say it when you create the app ("…hosted on Vercel") or any time after. **Every publish is a saved version**: `<app>.vercel.app/history` lists them all with a one-line note each, every one stays playable at `/v/<N>/`, "show me the versions" reads the list, and "go back to version 4" puts it back as a new version — nothing is ever lost. Each version is also kept in the app's own folder (`versions/Versions 1 - 10/04-index.html`, with a short README beside it), so going back needs no download and the history travels with the folder. |
 | **"Make me my own copy of this"** (`/copy-xr-app`) | Give it the address of any published kit app — yours or a colleague's, the current version or "version 4" from its history — and you get the whole thing as an editable project in your own folder, fingerprint-checked and ready to change. Nothing is needed from whoever made it: no files sent, no repository, no shared account. Your copy is yours; the original is untouched. |
 | **"Show me"** (`/preview-xr-app`) | The app is loaded in a headless browser and checked for errors. You get a screenshot and a one-line health report. |
 | **"Put it on the headset"** (`/publish-xr-app`) | The app is verified, uploaded to ClassCloud, filed under your organisation's **XR Prototypes** playlist, and you get a QR code. Scan it on the headset. Re-publish as often as you like — the QR never changes. |
@@ -27,10 +27,14 @@ skills/
   preview-xr-app/    headless load + error check + screenshot
   share-xr-app/      build → verify → GitHub Pages (in a repo) or Claude Artifact, on a permanent link
     assets/pages/                    the Pages workflow + site builder the kit installs in a repo
-  publish-to-vercel/ build a slim page + shared library → deploy through the Vercel connector → link
-    scripts/vercel_build.py          extracts the kit's plumbing into versioned library files; writes history.json,
-                                     the /history page and v/<N>/ for every version; --unslim puts the plumbing back
-    assets/kit-relay.js, api-log.js  the diary relay: page → /api/log → Vercel runtime log → connector
+  connect-vercel/    make a Vercel token, paste it into a box in the built-in browser; kept there, never in the chat
+    assets/vercel-bridge.js          window.KV: every Vercel call (deploy, projects, stores) from an api.vercel.com tab
+  publish-to-vercel/ build a slim page + shared library → deploy with the token (or the connector) → link
+    scripts/vercel_payload.py        writes the one KV.deploy(...) call for a build, fingerprints included
+    scripts/vercel_build.py          extracts the kit's plumbing into versioned library files (plus the relay, the
+                                     QR script and one history viewer for every app); writes history.json and
+                                     v/<N>/ for every version, /history redirects to the viewer; --unslim puts it back
+    assets/kit-relay.js, api-log.js  the diary relay (hosted in the library): page → /api/log → runtime log + Blob
     assets/api-reports.js            the same diary kept per session, readable weeks later
   copy-xr-app/       rebuild an app's source from its published address into a new project folder
   publish-xr-app/    build → verify → upload → playlist → QR
@@ -206,11 +210,14 @@ rotation kept, give and cap exact) and press a pretend trigger on the desktop.
   mouse look there (Esc stops it). The camera pauses while the cursor is off
   the page; fullscreen avoids that.
 - The Vercel route is a prototype (see `6 - Vercel Hosting/OVERVIEW.md` in the
-  project for the tests behind it). It needs the Vercel connector in the chat
-  and a Vercel login; Vercel's free Hobby plan is for non-commercial personal
+  project for the tests behind it, and `DetatchVercelMCP/` for the token route).
+  It needs a Vercel account and a token connected once with `/connect-vercel`
+  (or the Vercel connector), and the Claude desktop app open — the token route
+  runs in its built-in browser; Vercel's free Hobby plan is for non-commercial personal
   use, so staff use belongs on a Pro team. Apps that bundle an extra library
   (`cannon.iife.js`) are not supported on it yet; the kit's plumbing must be
-  hosted once per template version (`xr-kit-lib-<hash>` projects) — the skill
-  does that itself when it finds it missing, but the upload is the slow step.
+  hosted once per template version (`xr-kit-lib-<hash>` projects) — the kit's
+  maintainers do that on each release (the skill does it itself if one was
+  missed, but the upload is the slow step).
   The diary relay keeps only as long as Vercel's runtime logs do (1 hour on
   the free plan, 1 day on Pro); older plays still go through ClassCloud.

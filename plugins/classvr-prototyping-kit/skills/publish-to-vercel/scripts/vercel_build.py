@@ -11,15 +11,24 @@ Second build output for a kit app, alongside build.py's single file:
               xr-kit-<ver>.js         xr-kit / checker-ground components
               xr-kit-panel-<ver>.js   status panel (runs after the scene)
   * page/ — the deploy set for THIS app: a slim index.html that loads those
-            files and A-Frame from URLs, kit-relay.js (posts the app's diary
-            to /api/log), api/log.js (receives it, prints it to the runtime
-            log and keeps one copy per session in Blob storage),
-            api/reports.js (reads that history back), kit-qr.js (draws a
-            QR code of the page's public address on the page), package.json
-            and vercel.json. Only index.html changes from publish to publish —
-            the others are byte-identical every time, so a publish can send
-            them by SHA instead of re-uploading them (see `deployFiles` in
-            manifest.json).
+            files and A-Frame from URLs, api/log.js (receives the diary,
+            prints it to the runtime log and keeps one copy per session in
+            Blob storage), api/reports.js (reads that history back),
+            package.json and vercel.json (noindex header + the /history
+            redirect). The api files and package.json are byte-identical
+            every time, so a publish can send them by SHA instead of
+            re-uploading them (see `deployFiles` in manifest.json).
+
+  Since kit 0.29 the library also carries what used to travel with every
+  app (so each publish is only the app's own files):
+              kit-relay-<ver>.js      posts the diary to the PAGE's /api/log
+              kit-qr-<ver>.js         draws the page's own QR code
+              history-<ver>.html      one history viewer for every app:
+                                      ?app=https://<project>.vercel.app reads
+                                      that app's /history.json
+            plus vercel.json and a one-line index.html, so lib/ is a complete
+            folder that can be deployed (or dropped) as the library project.
+            The library version hash covers these files too.
 
 Nothing in the app's source changes. The plumbing blocks are found by the
 same markers the template already carries (the diary's `window.KIT =`, the
@@ -31,11 +40,13 @@ records the page's SHA-1 fingerprint, size, date and a one-line note under
 `vercel.versions` in xr-project.json, and writes into the deploy set
 
   history.json          the list, machine-readable, public
-  history/index.html    the same list as a page: /history
   v/<N>/index.html      every version, playable forever at /v/<N>/
+  (/history redirects to the library's history viewer for this app)
 
-Only the newest page travels in the publish (twice: as index.html and as
-v/<N>/index.html). Every older v/<M>/index.html is listed in the manifest by
+Only the newest page travels in the publish, once, as index.html: since kit
+0.29 vercel.json rewrites /v/<N>/ (the current version) to it, so the address
+and its QR code are unchanged but the bytes are not stored twice. It becomes a
+real v/<N>/index.html file only when a newer version replaces it. Every older v/<M>/index.html is listed in the manifest by
 fingerprint alone — Vercel already holds those bytes from the publish that
 first sent them — so a history of fifty versions costs the same to publish
 as one. "Go back to version 4" is an ordinary publish whose source is the
@@ -56,7 +67,7 @@ history travels with the folder. `--no-local-versions` turns it off.
 
 On-page QR code (kit 0.27). The page carries
   <meta name="xr-kit-qr" content="url=https://<project>.vercel.app/">
-and loads /kit-qr.js, which draws the card when the page opens: host from that
+and loads kit-qr-<ver>.js from the library, which draws the card when the page opens: host from that
 line (never a protected *.vercel.app alias), path from the page itself, so
 /v/<N>/ shows a code for that exact version. The address comes from --url, else
 vercel.url in xr-project.json; on a first publish the skill passes the address
@@ -91,7 +102,9 @@ SOURCE_META = 'xr-kit-source'
 QR_META = 'xr-kit-qr'
 BUNDLED_COMMENT = '<!-- Libraries are bundled beside this file, never loaded from a CDN. -->'
 HISTORY_JSON = 'history.json'
-HISTORY_PAGE = 'history/index.html'
+LIB_RELAY = 'kit-relay-%s.js'
+LIB_QR = 'kit-qr-%s.js'
+LIB_HISTORY = 'history-%s.html'
 
 
 def now_iso():
@@ -205,34 +218,19 @@ def history_document(manifest, versions):
     return doc
 
 
-def history_page(doc):
-    """A small static page listing the versions, generated fresh on every
-    publish. It embeds the same data history.json carries, so it needs no
-    fetch and works from a file as well as from the live address."""
-    e = htmlmod.escape
-    app = doc.get('app') or doc.get('slug') or 'this app'
-    rows = []
-    for v in reversed(doc['versions']):
-        tags = []
-        if v['version'] == doc.get('current'):
-            tags.append('<span class="tag now">current</span>')
-        if v.get('restoredFrom') is not None:
-            tags.append('<span class="tag">restored from version %d</span>' % v['restoredFrom'])
-        rows.append(
-            '<li><a class="ver" href="/v/%d/">Version %d</a> %s<div class="note">%s</div>'
-            '<div class="meta"><time datetime="%s">%s</time> · fingerprint <code title="%s">%s</code> · %s</div></li>'
-            % (v['version'], v['version'], ''.join(tags), e(v.get('note') or ''), e(v.get('date', '')),
-               e(v.get('date', '')[:10]), e(v.get('sha1', '')), e(v.get('sha1', '')[:8]),
-               '<a href="/v/%d/">play</a>' % v['version']))
-    url = doc.get('url') or ''
-    copy_hint = (e(url.rstrip('/')) + ' version N') if url else 'this address, version N'
-    return '''<!DOCTYPE html>
+def history_viewer():
+    """One page for every app, hosted in the library: /history-<ver>.html?app=
+    https://<project>.vercel.app. It fetches that app's /history.json (public,
+    served with Access-Control-Allow-Origin: *) and lists the versions. Each
+    app's /history redirects here, so nothing about the history page travels
+    with an app's publish."""
+    return """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>%(app)s — history</title>
+<title>History</title>
 <style>
 :root { --bg:#f7f7f5; --fg:#1e1e1e; --muted:#6b6b6b; --card:#fff; --line:#e3e3e0; --accent:#2b6cb0; --now:#2f855a; }
 @media (prefers-color-scheme: dark) { :root { --bg:#141414; --fg:#ececec; --muted:#a0a0a0; --card:#1e1e1e; --line:#2c2c2c; --accent:#7fb3ff; --now:#7bd39a; } }
@@ -253,19 +251,48 @@ aside b { color:var(--fg); }
 </head>
 <body>
 <main>
-<h1>%(app)s <small>— every version</small></h1>
-<p class="lead">Each version stays playable at its own address. <a href="/">Open the current version</a>.</p>
-<ol>
-%(rows)s
-</ol>
-<aside>
-<b>Want your own copy?</b> Ask Claude: “make me my own copy of %(copy)s”. You get an independent copy to change however you like; this one is untouched.<br>
-<b>Fingerprint</b> is the first eight characters of the page's SHA-1 — two people quoting the same fingerprint are looking at exactly the same version. The full list is at <a href="/history.json">history.json</a>.
+<h1 id="h">History</h1>
+<p class="lead" id="lead">Loading the list of versions…</p>
+<ol id="list"></ol>
+<aside id="about" hidden>
+<b>Want your own copy?</b> Ask Claude: “make me my own copy of <span id="copy"></span>”. You get an independent copy to change however you like; this one is untouched.<br>
+<b>Fingerprint</b> is the first eight characters of the page's SHA-1 — two people quoting the same fingerprint are looking at exactly the same version. The full list is at <a id="json">history.json</a>.
 </aside>
 </main>
+<script>
+(function () {
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  var lead = document.getElementById('lead');
+  var app = (new URLSearchParams(location.search).get('app') || '').replace(/\\/+$/, '');
+  if (!/^https:\\/\\/[a-z0-9.-]+$/i.test(app)) { lead.textContent = 'This page shows the versions of a ClassVR prototype. Open it from the app\\'s own /history address.'; return; }
+  fetch(app + '/history.json', { cache: 'no-store' }).then(function (r) {
+    if (!r.ok) throw new Error(r.status); return r.json();
+  }).then(function (doc) {
+    var name = doc.app || doc.slug || 'This app';
+    document.title = name + ' — history';
+    var h = document.getElementById('h'); h.textContent = name + ' '; h.appendChild(el('small', null, '— every version'));
+    lead.textContent = 'Each version stays playable at its own address. ';
+    var cur = el('a', null, 'Open the current version'); cur.href = app + '/'; lead.appendChild(cur); lead.appendChild(document.createTextNode('.'));
+    var list = document.getElementById('list');
+    (doc.versions || []).slice().reverse().forEach(function (v) {
+      var li = el('li'), a = el('a', 'ver', 'Version ' + v.version); a.href = app + '/v/' + v.version + '/'; li.appendChild(a);
+      if (v.version === doc.current) li.appendChild(el('span', 'tag now', 'current'));
+      if (v.restoredFrom != null) li.appendChild(el('span', 'tag', 'restored from version ' + v.restoredFrom));
+      li.appendChild(el('div', 'note', v.note || ''));
+      var meta = el('div', 'meta'), t = el('time', null, (v.date || '').slice(0, 10)); t.dateTime = v.date || ''; meta.appendChild(t);
+      meta.appendChild(document.createTextNode(' · fingerprint ')); var c = el('code', null, (v.sha1 || '').slice(0, 8)); c.title = v.sha1 || ''; meta.appendChild(c);
+      meta.appendChild(document.createTextNode(' · ')); var play = el('a', null, 'play'); play.href = app + '/v/' + v.version + '/'; meta.appendChild(play);
+      li.appendChild(meta); list.appendChild(li);
+    });
+    document.getElementById('copy').textContent = app + ' version N';
+    document.getElementById('json').href = app + '/history.json';
+    document.getElementById('about').hidden = false;
+  }).catch(function () { lead.textContent = 'Could not read the list of versions from ' + app + '.'; });
+})();
+</script>
 </body>
 </html>
-''' % {'app': e(app), 'rows': '\n'.join(rows), 'copy': copy_hint}
+"""
 
 
 def find_block(html, tag, must_contain, start_at=0):
@@ -349,14 +376,25 @@ def build(a):
     panel_js = panel_js.replace('(bundled)', '(shared library)')
     # version = hash of the plumbing AFTER normalising, so every app made from
     # the same template gets the same library whatever it is called
+    relay_js = open(os.path.join(ASSETS, 'kit-relay.js'), encoding='utf-8').read()
+    qr_js = open(os.path.join(ASSETS, 'kit-qr.js'), encoding='utf-8').read()
+    viewer_html = history_viewer()
     v = a.kit_version
     if v == 'auto':
-        v = hashlib.sha256((diary_js + style.group(1) + xrkit.group(1) + panel_js).encode('utf-8')).hexdigest()[:12]
+        v = hashlib.sha256((diary_js + style.group(1) + xrkit.group(1) + panel_js
+                            + relay_js + qr_js + viewer_html).encode('utf-8')).hexdigest()[:12]
     lib = {
         'xr-kit-diary-%s.js' % v: diary_js.strip('\n') + '\n',
         'xr-kit-%s.css' % v: style.group(1).strip('\n') + '\n',
         'xr-kit-%s.js' % v: xrkit.group(1).strip('\n') + '\n',
         'xr-kit-panel-%s.js' % v: panel_js.strip('\n') + '\n',
+        LIB_RELAY % v: relay_js,
+        LIB_QR % v: qr_js,
+        LIB_HISTORY % v: viewer_html,
+        # the library project's own settings and front page, so lib/ can be
+        # deployed (or dropped) as it stands
+        'vercel.json': open(os.path.join(ASSETS, 'vercel-lib.json'), encoding='utf-8').read(),
+        'index.html': '<!DOCTYPE html><title>xr-kit library %s</title><p>ClassVR Prototyping Kit library %s.</p>\n' % (v, v),
     }
     for name, text in lib.items():
         open(os.path.join(out, 'lib', name), 'w', encoding='utf-8', newline='\n').write(text)
@@ -371,14 +409,14 @@ def build(a):
     page = page[:aframe_tag.start()] + '<script src="https://aframe.io/releases/%s/aframe.min.js"></script>' % a.aframe + page[aframe_tag.end():]
     # absolute: the same page is also served at /v/<N>/, where ./kit-relay.js
     # would 404 (it did before 0.27 — version pages sent no diary)
-    relay_tag = '' if a.no_relay else '\n<script src="/kit-relay.js"></script>'
+    relay_tag = '' if a.no_relay else '\n<script src="%s/%s"></script>' % (L, LIB_RELAY % v)
     page = page[:diary.start()] + '<script src="%s/xr-kit-diary-%s.js"></script>' % (L, v) + relay_tag + page[diary.end():]
     # any other bundled library (cannon.iife.js, ...) must be hosted beside the
     # kit files; point at it there and list it so the publish step can check
     extra_libs = []
     def relib(m):
         extra_libs.append(m.group(1)); return '<script src="%s/%s"></script>' % (L, m.group(1))
-    page = re.sub(r'<script src="\./(?!kit-relay\.js)([^"]+\.js)"></script>', relib, page)
+    page = re.sub(r'<script src="\./([^"]+\.js)"></script>', relib, page)
     page = re.sub(re.escape(BUNDLED_COMMENT),
                   '<!-- Vercel build: kit %s from %s, A-Frame %s from aframe.io -->' % (v, L, a.aframe), page)
     page = re.sub(r'window\.BUILD = \d+;', 'window.BUILD = %d;' % build_no, page)
@@ -395,7 +433,7 @@ def build(a):
         if qr_url:
             page = page.replace(source_meta, source_meta + '\n<meta name="%s" content="url=%s">' % (QR_META, qr_url), 1)
         ends = list(re.finditer(r'</body\s*>', page, flags=re.IGNORECASE))
-        tag = '<script src="/kit-qr.js"></script>\n'
+        tag = '<script src="%s/%s"></script>\n' % (L, LIB_QR % v)
         page = (page[:ends[-1].start()] + tag + page[ends[-1].start():]) if ends else page + '\n' + tag
     page, plained = plain_characters(page)
     if plained:
@@ -416,12 +454,10 @@ def build(a):
         json.dump(manifest, open(os.path.join(a.app, 'xr-project.json'), 'w', encoding='utf-8'), indent=2)
         open(os.path.join(a.app, 'xr-project.json'), 'a').write('\n')
         doc = history_document(manifest, versions)
-        deploy[version_path(build_no)] = page
         for old in versions:
             if old['version'] != build_no:
                 by_fingerprint[version_path(old['version'])] = (old['sha1'], old['size'])
         deploy[HISTORY_JSON] = json.dumps(doc, indent=2) + '\n'
-        deploy[HISTORY_PAGE] = history_page(doc)
         # 4b. the same page kept in the app's own folder — versions/Versions 1 - 10/
         #     03-index.html + 03-README.txt — so "go back" never needs a download
         #     for the person's own app, and the history travels with the folder
@@ -429,16 +465,61 @@ def build(a):
             cur = next(v2 for v2 in versions if v2['version'] == build_no)
             saved_page, saved_readme = save_local_version(a.app, manifest, cur, page, (manifest.get('vercel') or {}).get('url'))
             print('kept locally     %s' % os.path.relpath(saved_page, a.app))
-        for name in (version_path(build_no), HISTORY_JSON, HISTORY_PAGE):
+        for name in (HISTORY_JSON,):
             dest = os.path.join(out, 'page', name)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             open(dest, 'w', encoding='utf-8', newline='\n').write(deploy[name])
-    fixed = [] if a.no_qr else [('kit-qr.js', 'kit-qr.js')]
+        # older versions: the connector sends them by fingerprint, but a folder
+        # someone drops into the Vercel dashboard must hold the bytes, so copy
+        # each one from the app's versions/ folder when its fingerprint matches
+        missing_old = []
+        for old in versions:
+            if old['version'] == build_no:
+                continue
+            _, lp, _ = local_version_paths(a.app, old['version'])
+            ok = False
+            if os.path.exists(lp):
+                raw = open(lp, 'rb').read()
+                if hashlib.sha1(raw).hexdigest() == old['sha1']:
+                    dest = os.path.join(out, 'page', version_path(old['version']))
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    open(dest, 'wb').write(raw)
+                    ok = True
+            if not ok:
+                missing_old.append(old['version'])
+        if missing_old:
+            print('not in the app folder (the page/ folder alone would drop them): version%s %s'
+                  % ('' if len(missing_old) == 1 else 's', ', '.join(map(str, missing_old))))
+    fixed = []
     if not a.no_relay:
-        fixed += [('kit-relay.js', 'kit-relay.js'), ('api/log.js', 'api-log.js'),
-                  ('api/reports.js', 'api-reports.js'), ('package.json', 'package.json')]
-    if not a.indexable:
-        fixed.append(('vercel.json', 'vercel-app.json'))
+        fixed += [('api/log.js', 'api-log.js'), ('api/reports.js', 'api-reports.js'),
+                  ('package.json', 'package.json')]
+    # vercel.json: the noindex header (unless --indexable) and /history ->
+    # the library's viewer for this app. Per app, so it is sent inline.
+    vj = json.load(open(os.path.join(ASSETS, 'vercel-app.json'), encoding='utf-8')) if not a.indexable else {}
+    app_url = public_url(qr_url or a.url or (manifest.get('vercel') or {}).get('url'))
+    if not a.no_history:
+        dest_url = '%s/%s' % (L, LIB_HISTORY % v) + ('?app=%s' % app_url.rstrip('/') if app_url else '')
+        vj['redirects'] = [{'source': '/history', 'destination': dest_url, 'permanent': False},
+                           {'source': '/history/', 'destination': dest_url, 'permanent': False}]
+        # pages published before kit 0.29 load /kit-relay.js and /kit-qr.js from
+        # the app's own site; those files no longer travel with a publish, so
+        # while any such version is in the history, send those two addresses to
+        # the library (a script follows a redirect; the relay still posts to the
+        # page's own /api/log)
+        # the current version's own address is served from index.html
+        cur_dir = '/v/%d' % build_no
+        vj['rewrites'] = [{'source': cur_dir, 'destination': '/index.html'},
+                          {'source': cur_dir + '/', 'destination': '/index.html'},
+                          {'source': cur_dir + '/index.html', 'destination': '/index.html'}]
+        if any(old['version'] != build_no for old in versions):
+            vj['redirects'] += [
+                {'source': '/kit-relay.js', 'destination': '%s/%s' % (L, LIB_RELAY % v), 'permanent': False},
+                {'source': '/kit-qr.js', 'destination': '%s/%s' % (L, LIB_QR % v), 'permanent': False}]
+    if vj:
+        text = json.dumps(vj, indent=2) + '\n'
+        open(os.path.join(out, 'page', 'vercel.json'), 'w', encoding='utf-8', newline='\n').write(text)
+        deploy['vercel.json'] = text
     for name, asset in fixed:
         text = open(os.path.join(ASSETS, asset), encoding='utf-8').read()
         dest = os.path.join(out, 'page', name)
@@ -456,6 +537,7 @@ def build(a):
         s1, n = sha1_bytes(text)
         out_man['files']['lib/' + name] = {'bytes': n, 'sha256': h, 'sha1': s1}
         print('lib/%-26s %s  sha256 %s' % (name, kb(text), h[:12]))
+    out_man['libDeploy'] = sorted(lib)
     # the complete file set the deploy tool must receive: everything written
     # under page/ plus every older version, which travels by fingerprint only
     out_man['deploy'] = sorted(list(deploy) + list(by_fingerprint))
@@ -465,7 +547,7 @@ def build(a):
     # so a file new in this publish cannot be sent by sha — verified 22 Sep);
     # history.json and the history page change too; everything else is
     # byte-identical across publishes and goes by sha after the first time
-    inline_names = {'index.html', HISTORY_JSON, HISTORY_PAGE, version_path(build_no)}
+    inline_names = {'index.html', HISTORY_JSON, 'vercel.json'}
     for name in sorted(deploy):
         text = deploy[name]
         s1, n = sha1_bytes(text)
@@ -554,9 +636,9 @@ def unslim(a):
         page = new
 
     # the relay and QR lines go; they belong to the published copy, not the source
-    page = re.sub(r'\n?<script src="\.?/kit-relay\.js"></script>', '', page, count=1)
+    page = re.sub(r'\n?<script src="[^"]*/kit-relay(?:-[0-9a-f]{6,})?\.js"></script>', '', page, count=1)
     page = re.sub(r'<meta name="%s" content="[^"]*">\s*' % QR_META, '', page, count=1)
-    page = re.sub(r'<script src="/kit-qr\.js"></script>\n?', '', page, count=1)
+    page = re.sub(r'<script src="[^"]*/kit-qr(?:-[0-9a-f]{6,})?\.js"></script>\n?', '', page, count=1)
     one(r'<script src="[^"]*/xr-kit-panel-%s\.js"></script>' % ver, '<script>\n' + panel_js + '\n</script>', 'status panel')
     one(r'<script src="[^"]*/xr-kit-%s\.js"></script>' % ver, '<script>\n' + xrkit_js + '\n</script>', 'xr-kit component')
     one(r'<link rel="stylesheet" href="[^"]*/xr-kit-%s\.css">' % ver, '<style>\n' + css + '\n</style>', 'stylesheet')
