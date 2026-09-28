@@ -304,6 +304,7 @@
     'background:rgba(255,255,255,.16);color:#fff;font:26px/44px sans-serif;text-align:center;cursor:pointer}' +
     '#kit-qr.big .x:hover{background:rgba(255,255,255,.3)}' +
     '#kit-qr.kit-qr-vr{display:none}' +
+    '#kit-qr a.about{color:#9fd3ff;font-size:12px;margin-top:4px;text-decoration:underline}#kit-qr.big a.about{display:none}' +
     '@media (max-height:560px){#kit-qr.big svg{width:min(56vmin,600px);height:min(56vmin,600px)}#kit-qr.big{gap:10px}}' +
     '@media (max-width:700px),(max-height:520px){#kit-qr:not(.big){padding:6px;gap:0}' +
     '#kit-qr:not(.big) svg{width:96px;height:96px}#kit-qr:not(.big) .t{display:none}}';
@@ -331,6 +332,16 @@
       '<button class="x" type="button" aria-label="Back to normal size">&times;</button>';
     q.querySelector('b').textContent = where.version ? 'Open version ' + where.version + ' on a headset' : 'Open on a headset';
     q.querySelector('code').textContent = where.url.replace(/^https?:\/\//, '');
+    // the app's README + changelog travel inside the page (kit 0.32); the
+    // readable version lives at the site's /about/
+    if (document.getElementById('xr-kit-readme')) {
+      var ab = document.createElement('a');
+      ab.className = 'about';
+      ab.textContent = 'About this app';
+      ab.href = where.url.replace(/^(https?:\/\/[^\/]+).*$/, '$1') + '/about/';
+      ab.addEventListener('click', function (e) { e.stopPropagation(); });
+      q.querySelector('.t').appendChild(ab);
+    }
     document.body.appendChild(q);
 
     var hint = q.querySelector('.hint');

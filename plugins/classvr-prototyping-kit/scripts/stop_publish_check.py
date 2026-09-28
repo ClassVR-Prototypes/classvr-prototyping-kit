@@ -70,7 +70,12 @@ def main():
 
     # Uncommitted app changes count as unfinished work too.
     rc, dirty = git(root, 'status', '--porcelain', '--untracked-files=no')
-    dirty_apps = [l for l in dirty.splitlines() if 'index.html' in l or 'xr-project.json' in l]
+    # (an app's README.md / CHANGELOG.md count too, but not the repo's own at the top)
+    def app_file(line):
+        path = line.split()[-1] if line.split() else ''
+        name = path.rsplit('/', 1)[-1]
+        return name in ('index.html', 'xr-project.json') or (name in ('README.md', 'CHANGELOG.md') and '/' in path)
+    dirty_apps = [l for l in dirty.splitlines() if app_file(l)]
 
     # Fresh view of main and of this branch on GitHub (quick; failures are tolerated).
     git(root, 'fetch', '--quiet', 'origin', 'main', branch, timeout=40)

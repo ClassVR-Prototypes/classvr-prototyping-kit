@@ -10,7 +10,7 @@ description: >
   builds a minimal playable version of the chosen one. No terminal, no libraries to
   install.
 metadata:
-  version: "0.5.0"
+  version: "0.6.0"
 ---
 
 # New XR app
@@ -30,6 +30,10 @@ A folder named after the app, containing:
   fix. Content goes below the `<!-- ADD YOUR CONTENT HERE -->` marker.
 - `aframe.min.js` — A-Frame 1.7.1, bundled. **Never** swap this for a CDN link.
 - `xr-project.json` — the manifest the preview and publish steps read and update.
+- `README.md` — what the app is, how to play it and how it works, written for
+  someone who has only the link. Published inside the page.
+- `CHANGELOG.md` — what changed in each version (Keep a Changelog), starting
+  with a "First version" line that becomes version 1 when it is published.
 
 Plus, when a concept was chosen (step 2), the first playable version of it.
 
@@ -160,6 +164,13 @@ Build a **minimal playable slice**, not a game:
 Say what you built in the manifest's `concept` field (scaffold `--concept`, or
 `manifest.py --set concept="…"` afterwards) so later sessions know what the app
 is about.
+
+**Rewrite the scaffolded `README.md`** to describe the slice you built: what
+it is, how to play (headset and computer, matching `KIT_CONTROLS`), what's in
+the scene, and how it works in a few plain sentences — see `xr-app-rules`,
+"README and changelog". The changelog's first line already says "First
+version: <concept>"; leave it (adjust the wording if the concept line reads
+oddly). For a plain starter scene the scaffolded README is right as it is.
 
 ### 6. Verify before handing over
 

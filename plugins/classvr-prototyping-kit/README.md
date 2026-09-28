@@ -186,6 +186,27 @@ far the view gave (≈ 0.3 × that), `/check-headset` reads both back, and two
 built-in self-checks feed the lock two pretend eyes (centred, 64 mm apart,
 rotation kept, give and cap exact) and press a pretend trigger on the desktop.
 
+### Every app explains itself: README and changelog (0.32)
+
+Each app folder has a `README.md` (what the app is, how to play it, how it
+works — always the current version) and a `CHANGELOG.md` ([Keep a Changelog
+1.1.0](https://keepachangelog.com/en/1.1.0/)). Two files, not one: the README
+answers "what is this?", the changelog "what changed?", and the format
+expects its own file. Claude adds a line under `## [Unreleased]` on every
+edit (`xr-app-rules`); `build.py` turns those lines into `## [N] - date` when
+the build number goes up, and the Vercel history note is made from them, so
+nothing is written twice. A README-only change is a new version.
+
+Both travel **inside the page** (`<script type="text/markdown"
+id="xr-kit-readme">` / `xr-kit-changelog`, just before `</body>`), so every
+route, every `/v/N/` version and every copy carries its own, and
+`/copy-xr-app` gets them back without asking the author for anything. On
+Vercel the deploy also serves `README.md`, `CHANGELOG.md` and a readable
+`/about/` page, linked from `/history` and the page's QR card. A copy's
+changelog starts with "Made this copy of … version N" and keeps the
+original's history under "Before this copy". Neither file carries names or
+e-mail addresses. Helper: `skills/publish-xr-app/scripts/appdocs.py`.
+
 ## Known limitations
 
 - The file upload itself is an HTTP `POST`, not a connector call, because the

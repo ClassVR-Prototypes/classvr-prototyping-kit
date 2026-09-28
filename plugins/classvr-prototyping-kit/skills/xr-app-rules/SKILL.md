@@ -10,7 +10,7 @@ description: >
   an app working on a ClassVR headset, so ordinary prompts don't reintroduce known
   failures, plus ready recipes such as passthrough (AR).
 metadata:
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Rules for editing a kit XR app
@@ -464,6 +464,56 @@ code …" on the third; the HTML panel line ends the same three ways. Keep this
 wording in step across the three places if it is ever changed; never add the
 raw error text to the card — it is in the diary for Claude.
 
+## README and changelog
+
+Every app folder has a `README.md` and a `CHANGELOG.md` beside `index.html`
+(new apps since kit 0.32). Both are published **inside the page**, so anyone
+who opens the link, looks at an old version or makes their own copy gets
+them — they are how someone else understands the app. Keep them current as
+part of every edit, silently: the person never has to ask, and they are not
+something to report on beyond "the app's notes are updated" if asked.
+
+**No README or changelog yet** (an app made before 0.32): create them on the
+first edit —
+
+    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/appdocs.py init "<app>"
+
+— which seeds the changelog from the version notes already in
+`xr-project.json`, then rewrite the README's placeholder sections from what
+the app actually does (read `index.html`, `concept`, `KIT_CONTROLS`).
+
+**`CHANGELOG.md`** follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
+For each change the person would notice, add one line under `## [Unreleased]`:
+
+    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/appdocs.py add "<app>" \
+        --category Added|Changed|Fixed|Removed --entry "A lap counter above the track."
+
+- One line per change, plain English, what the player sees — "The ball
+  bounces higher", not "restitution 0.4 → 0.7". Fixes say what was wrong
+  from the player's side ("Balls no longer fall through the floor").
+- Categories: **Added** (new things), **Changed** (existing things behave or
+  look different), **Fixed**, **Removed**; Deprecated and Security almost
+  never apply.
+- Never write version headings or dates yourself, and never edit a released
+  version's section: the build turns Unreleased into `## [N] - date` when the
+  build number goes up, and the Vercel history note is made from those lines.
+- No names, e-mail addresses, organisation ids or internal links — it is public.
+- An edit that changes nothing a player would notice (a self-check, a
+  refactor) still gets a line under Changed ("Tidied up how the score is
+  worked out — plays the same").
+
+**`README.md`** always describes the app as it is **now**. Update it in the
+same edit whenever what the app is, what's in it, how to play it or the
+controls change. Keep this shape (the scaffold starts it): `# <App name>`,
+one or two sentences on what it is and who it's for; **How to play** (headset
+first, then computer; matches `KIT_CONTROLS`); **What's in it** (the things in
+the scene); **How it works** (a short, plain explanation — the mechanics, any
+formula or rule the app teaches, settings worth tweaking and where they live
+in `index.html`); **Make your own copy**. Add sections when an app needs them
+(e.g. "For teachers"); don't pad. No names or e-mail addresses. A change to
+the README alone is a change to the app: it is published as a new version,
+with a Changed line such as "Clearer instructions for the headset".
+
 ## Controls the kit reserves
 
 Trigger = interact, thumbsticks = move / snap-turn, **both triggers held 2 s =
@@ -474,6 +524,10 @@ single triggers freely; never a two-trigger combination or the F key.
 
 Every edit to `index.html` ends the same way, in this order:
 
+0. **README and changelog** (see "README and changelog"): a line under
+   Unreleased in `CHANGELOG.md` for what changed, and `README.md` updated if
+   what the app is or how to play it changed. Create both first if the folder
+   has neither.
 1. **Preview check** (`/preview-xr-app`, no screenshot rendered). It takes
    seconds and catches a thrown error, a missing library, a scene that no
    longer loads, or a self-check that no longer passes — the failures a
@@ -493,8 +547,8 @@ Every edit to `index.html` ends the same way, in this order:
    build number bumps, and it's what confirms they're looking at the new
    version. If the manifest has no link yet (an app made before links
    existed), this creates one.
-3. Write `index.html` and `xr-project.json` back to the folder (in a repo, the
-   commit is the write-back).
+3. Write `index.html`, `xr-project.json`, `README.md` and `CHANGELOG.md` back
+   to the folder (in a repo, the commit is the write-back).
 
 The link is the last thing on screen in an edit turn: the Pages URL on its own
 line, the artifact card, or (Vercel) the URL and the QR code. One sentence about what changed, then "reload the

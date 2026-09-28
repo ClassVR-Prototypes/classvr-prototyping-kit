@@ -74,6 +74,15 @@ vercel.url in xr-project.json; on a first publish the skill passes the address
 it expects (https://<project>.vercel.app/) and checks it after the deploy.
 --no-qr leaves the card out. --unslim removes both lines again.
 
+README and changelog (kit 0.32). The app's README.md and CHANGELOG.md go
+inside the page (appdocs.embed), so every version and every copy carries its
+own; the changelog's version headings are linked to /v/<N>/; and the deploy
+set gains README.md, CHANGELOG.md and about/index.html — the readable "About
+this app" page, linked from /history. Without --note, the history note is made
+from this version's changelog lines. --unslim puts both files back beside the
+rebuilt index.html (--docs readme|none to keep only the README, or neither —
+"go back to version N" keeps the current changelog).
+
 Usage:
   vercel_build.py <app folder> [--lib-base https://…] [--kit-version auto|label]
                   [--aframe auto|X.Y.Z] [--out <dir>] [--no-relay] [--indexable]
@@ -97,6 +106,9 @@ harmless way: the status panel reads the app's name from the page title
 instead of carrying it as a literal.
 """
 import argparse, datetime, hashlib, html as htmlmod, json, os, re, shutil, sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'publish-xr-app', 'scripts'))
+import appdocs   # README.md + CHANGELOG.md (kit 0.32)
 
 SOURCE_META = 'xr-kit-source'
 QR_META = 'xr-kit-qr'
@@ -254,6 +266,7 @@ aside b { color:var(--fg); }
 <h1 id="h">History</h1>
 <p class="lead" id="lead">Loading the list of versions…</p>
 <ol id="list"></ol>
+<p id="aboutlink" hidden><a id="abouta">About this app</a> — what it is, how to play it and what changed in each version.</p>
 <aside id="about" hidden>
 <b>Want your own copy?</b> Ask Claude: “make me my own copy of <span id="copy"></span>”. You get an independent copy to change however you like; this one is untouched.<br>
 <b>Fingerprint</b> is the first eight characters of the page's SHA-1 — two people quoting the same fingerprint are looking at exactly the same version. The full list is at <a id="json">history.json</a>.
@@ -284,6 +297,7 @@ aside b { color:var(--fg); }
       meta.appendChild(document.createTextNode(' · ')); var play = el('a', null, 'play'); play.href = app + '/v/' + v.version + '/'; meta.appendChild(play);
       li.appendChild(meta); list.appendChild(li);
     });
+    if (doc.about) { var ab = document.getElementById('abouta'); ab.href = app + '/' + doc.about; document.getElementById('aboutlink').hidden = false; }
     document.getElementById('copy').textContent = app + ' version N';
     document.getElementById('json').href = app + '/history.json';
     document.getElementById('about').hidden = false;
@@ -435,6 +449,16 @@ def build(a):
         ends = list(re.finditer(r'</body\s*>', page, flags=re.IGNORECASE))
         tag = '<script src="%s/%s"></script>\n' % (L, LIB_QR % v)
         page = (page[:ends[-1].start()] + tag + page[ends[-1].start():]) if ends else page + '\n' + tag
+    # README + changelog inside the page (the changelog's versions linked to
+    # their /v/<N>/ addresses first — those lines don't count as a change)
+    link_url = public_url(qr_url or a.url or (manifest.get('vercel') or {}).get('url'))
+    cl = appdocs.read(a.app, 'changelog')
+    if cl is not None and link_url:
+        cl2 = appdocs.set_links(cl, link_url)
+        if cl2 != cl:
+            appdocs.write(a.app, 'changelog', cl2)
+    app_docs = appdocs.docs(a.app)
+    page = appdocs.embed(page, app_docs)
     page, plained = plain_characters(page)
     if plained:
         print('wrote %d special character%s plainly (so the fingerprint survives the upload)' % (plained, '' if plained == 1 else 's'))
@@ -450,10 +474,13 @@ def build(a):
         # 4a. version history: this page becomes v/<build>/, older builds are
         #     listed by fingerprint, and the list is written as JSON + a page
         page_sha1, page_size = sha1_bytes(page)
-        versions = record_version(manifest, build_no, page_sha1, page_size, a.note, a.restored_from)
+        note = a.note or appdocs.note_from(app_docs.get('changelog'), build_no)
+        versions = record_version(manifest, build_no, page_sha1, page_size, note, a.restored_from)
         json.dump(manifest, open(os.path.join(a.app, 'xr-project.json'), 'w', encoding='utf-8'), indent=2)
         open(os.path.join(a.app, 'xr-project.json'), 'a').write('\n')
         doc = history_document(manifest, versions)
+        if app_docs.get('readme') or app_docs.get('changelog'):
+            doc['about'] = 'about/'
         for old in versions:
             if old['version'] != build_no:
                 by_fingerprint[version_path(old['version'])] = (old['sha1'], old['size'])
@@ -490,6 +517,18 @@ def build(a):
         if missing_old:
             print('not in the app folder (the page/ folder alone would drop them): version%s %s'
                   % ('' if len(missing_old) == 1 else 's', ', '.join(map(str, missing_old))))
+    # README.md, CHANGELOG.md and the readable about/ page
+    if app_docs.get('readme') or app_docs.get('changelog'):
+        for name, text in (('README.md', app_docs.get('readme')), ('CHANGELOG.md', app_docs.get('changelog'))):
+            if text:
+                deploy[name] = text
+        deploy['about/index.html'] = appdocs.about_page(manifest.get('name'), app_docs.get('readme'),
+                                                        app_docs.get('changelog'), link_url, build_no)
+        for name in ('README.md', 'CHANGELOG.md', 'about/index.html'):
+            if name in deploy:
+                dest = os.path.join(out, 'page', name)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                open(dest, 'w', encoding='utf-8', newline='\n').write(deploy[name])
     fixed = []
     if not a.no_relay:
         fixed += [('api/log.js', 'api-log.js'), ('api/reports.js', 'api-reports.js'),
@@ -516,6 +555,10 @@ def build(a):
             vj['redirects'] += [
                 {'source': '/kit-relay.js', 'destination': '%s/%s' % (L, LIB_RELAY % v), 'permanent': False},
                 {'source': '/kit-qr.js', 'destination': '%s/%s' % (L, LIB_QR % v), 'permanent': False}]
+    if 'README.md' in deploy or 'CHANGELOG.md' in deploy:
+        # shown as text in the browser rather than downloaded
+        vj.setdefault('headers', []).append({'source': '/(README|CHANGELOG).md',
+                                             'headers': [{'key': 'Content-Type', 'value': 'text/plain; charset=utf-8'}]})
     if vj:
         text = json.dumps(vj, indent=2) + '\n'
         open(os.path.join(out, 'page', 'vercel.json'), 'w', encoding='utf-8', newline='\n').write(text)
@@ -547,7 +590,7 @@ def build(a):
     # so a file new in this publish cannot be sent by sha — verified 22 Sep);
     # history.json and the history page change too; everything else is
     # byte-identical across publishes and goes by sha after the first time
-    inline_names = {'index.html', HISTORY_JSON, 'vercel.json'}
+    inline_names = {'index.html', HISTORY_JSON, 'vercel.json', 'README.md', 'CHANGELOG.md', 'about/index.html'}
     for name in sorted(deploy):
         text = deploy[name]
         s1, n = sha1_bytes(text)
@@ -603,6 +646,14 @@ def unslim(a):
     if a.expect_sha1 and fetched_sha1.lower() != a.expect_sha1.lower():
         raise SystemExit('fingerprint mismatch: the fetched page is %s but the history says %s — '
                          'fetch it again before copying' % (fetched_sha1[:8], a.expect_sha1[:8]))
+    # README + changelog: out of the page, back beside the rebuilt index.html
+    found = appdocs.extract(page)
+    page = appdocs.strip(page)
+    docs_written = []
+    for k, text in found.items():
+        if a.docs == 'both' or a.docs == k:
+            appdocs.write(os.path.dirname(os.path.abspath(a.out)), k, text)
+            docs_written.append(appdocs.FILES[k])
     m = re.search(r'<meta name="%s" content="([^"]*)">\s*' % SOURCE_META, page)
     info = {}
     if m:
@@ -656,7 +707,8 @@ def unslim(a):
                       'build': int(info.get('build', 0) or 0), 'slug': info.get('slug'),
                       'aframe': info.get('aframe'), 'libBase': info.get('lib'),
                       'publishedSha1': fetched_sha1, 'fingerprint': fetched_sha1[:8], 'publishedBytes': fetched_size,
-                      'bytes': len(page.encode('utf-8'))}, indent=2))
+                      'bytes': len(page.encode('utf-8')),
+                      'docsFound': sorted(appdocs.FILES[k] for k in found), 'docsWritten': docs_written}, indent=2))
 
 
 def main():
@@ -678,6 +730,9 @@ def main():
     ap.add_argument('--lib-dir', default=None, help='with --unslim: folder holding the xr-kit-*.js/.css files the page names')
     ap.add_argument('--expect-sha1', default=None, metavar='HEX',
                     help='with --unslim: the fingerprint history.json gives for this version; stop if the fetched page does not match it')
+    ap.add_argument('--docs', choices=['both', 'readme', 'none'], default='both',
+                    help="with --unslim: which of the page's README.md / CHANGELOG.md to write beside --out "
+                         "(readme when going back to an old version: the current changelog stays)")
     ap.add_argument('--note', default=None, help='one plain-English line saying what changed in this version (goes in the public history)')
     ap.add_argument('--restored-from', type=int, default=None, metavar='N',
                     help='this publish puts version N back (its page was fetched from /v/N/ and unslimmed into index.html first)')

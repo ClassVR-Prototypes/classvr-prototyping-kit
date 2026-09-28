@@ -11,12 +11,16 @@ Writes <out>/<Name>/ containing:
     index.html        the app (two-file form, edit this)
     aframe.min.js     bundled A-Frame — never loaded from a CDN
     xr-project.json   the manifest the other kit scripts read and update
+    README.md         what the app is and how to play it (kit 0.32)
+    CHANGELOG.md      what changed in each version (Keep a Changelog 1.1.0)
 
 Prints a JSON summary on stdout. Exit code 0 on success.
 """
 import argparse, json, os, re, shutil, sys, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, '..', '..', 'publish-xr-app', 'scripts'))
+import appdocs
 ASSETS = os.path.join(HERE, '..', 'assets')
 
 HEADSET_CONTROLS = {
@@ -123,10 +127,14 @@ def main():
     open(os.path.join(dest, 'xr-project.json'), 'w', encoding='utf-8').write(
         json.dumps(manifest, indent=2) + '\n')
 
+    # the README and changelog; Claude rewrites the README once the app is
+    # built, and the changelog's first line becomes version 1 on first publish
+    appdocs.init(dest, 'First version: %s' % (manifest['concept'] or 'the starter scene, ready to build on'), 'Added')
+
     print(json.dumps({
         'ok': True,
         'project': dest,
-        'files': ['index.html', 'aframe.min.js', 'xr-project.json'],
+        'files': ['index.html', 'aframe.min.js', 'xr-project.json', 'README.md', 'CHANGELOG.md'],
         'name': a.name,
         'slug': manifest['slug'],
         'concept': manifest['concept'],

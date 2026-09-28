@@ -14,7 +14,7 @@ description: >
   their own. Nothing is needed from the person who made the original — no
   files sent, no repository, no account shared.
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
 ---
 
 # Copy an XR app
@@ -29,8 +29,11 @@ numbers, their publish. The original is untouched and cannot be affected.
 
 ## Outcome
 
-- A new project folder with `index.html`, `aframe.min.js` and
-  `xr-project.json`, the same shape `/new-xr-app` makes
+- A new project folder with `index.html`, `aframe.min.js`,
+  `xr-project.json`, `README.md` and `CHANGELOG.md`, the same shape
+  `/new-xr-app` makes — the README is the original's (what the app is and how
+  it works), the changelog is the copy's own with the original's history kept
+  under "Before this copy"
 - `xr-project.json` carrying `forkedFrom` (the address, build and library it
   came from) and **no** ids from the original (a publish makes the copier's
   own project)
@@ -89,7 +92,8 @@ aframe=…; lib=…">`.
 - **Present** → a slim page from the Vercel route. Continue at step 4.
 - **Absent, but the page contains `window.KIT = (function`** → a single-file
   build (ClassCloud, Pages, or an older Vercel publish). The source is already
-  there: skip to step 6 using this file as `index.html`. If it inlines
+  there: skip to step 6 using this file as `index.html` — but first take the
+  README and changelog out of it (step 5b). If it inlines
   A-Frame, strip nothing — but note the app folder wants A-Frame as a separate
   `aframe.min.js`; `/new-xr-app`'s scaffold provides one, and the page's own
   inline copy can stay. Say in one line that this came from a single-file
@@ -127,6 +131,25 @@ The result is the original source, with one deliberate difference: the status
 panel reads the app's name from the page title rather than carrying it as a
 literal. That is normal — do not mention it.
 
+It also writes the page's `README.md` and `CHANGELOG.md` beside `--out`
+(`docsWritten`), and leaves them out of the rebuilt `index.html`.
+
+### 5b. The README and changelog
+
+Every page published with kit 0.32 or later carries both inside it.
+
+- **Vercel slim page** → step 5 already wrote them into `<scratch>/`.
+- **Single-file build** (step 3, second case) →
+
+      python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/appdocs.py extract \
+          "<scratch>/published.html" --to "<scratch>" --strip-into "<scratch>/index.html"
+
+  and use `<scratch>/index.html` as the source in step 6.
+- **Pages address** and nothing embedded → fetch `<address>/README.md` and
+  `<address>/CHANGELOG.md` the same way as the page (either may 404).
+- **Neither** (published before 0.32) → nothing to copy; step 6 creates fresh
+  ones and you rewrite the README from what the app does.
+
 ### 6. Make the project folder
 
 Scaffold an empty app to get the right shape, then drop the rebuilt source in:
@@ -139,7 +162,20 @@ folder of that name already exists, add " copy" (then " copy 2", …) rather
 than overwriting anything.
 
 Replace the scaffolded `index.html` with the rebuilt one, keep
-`aframe.min.js`, then fix the manifest:
+`aframe.min.js`. Replace the scaffolded `README.md` and `CHANGELOG.md` with the
+original's when step 5b found them, then make the changelog the copy's own:
+
+    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/appdocs.py fork "<folder>" \
+        --url "<address, without /v/N/>" --version <N> --fingerprint <publishedSha1> --name "<original name>"
+
+Its Unreleased section now says which version of which address the copy was
+made from (that line becomes the copy's version 1 when it is published), and
+the original's history — up to the version copied — sits under "Before this
+copy" with its headings a level down, so it never clashes with the copy's own
+version numbers. If the person renames the copy, change the README's title to
+match; leave the rest of the README as the original wrote it.
+
+Then fix the manifest:
 
     python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/manifest.py \
         --project "<folder>" \
@@ -186,7 +222,9 @@ The rebuilt source is the original author's work. Record where it came from
 the field. When the copy is published to Vercel, its own `history.json`
 carries a `copiedFrom` line (address, version and fingerprint — no names)
 taken from that field; it is recorded, not displayed on the history page,
-and Claude can answer "where did this come from?" from it. If the original carries a `licence` in its manifest or a licence
+and Claude can answer "where did this come from?" from it. The copy's
+changelog also says it, in its first line (address, version and fingerprint —
+no names), and keeps the original's history under "Before this copy". If the original carries a `licence` in its manifest or a licence
 line in the page, copy it across and say what it is in one line. The kit does
 not decide what staff prototypes may be reused for — if the user asks, say it
 is an Avantis question, not a technical one.
@@ -197,8 +235,9 @@ is an Avantis question, not a technical one.
   down.
 - Reach `github.io` or ClassCloud pages from the cloud workspace — those need
   the browser pane or a paste.
-- Give the copier the original's play history or version history; the copy
-  starts clean at version 1 (with `copiedFrom` recording which version of
-  the original it began as).
+- Give the copier the original's play history or its playable old versions;
+  the copy starts at version 1 (with `copiedFrom` recording which version of
+  the original it began as). The original's changelog does come across, as
+  text, under "Before this copy".
 - Change the original in any way. There is no "send my changes back" — the
   copier publishes their own, and the two are separate from then on.

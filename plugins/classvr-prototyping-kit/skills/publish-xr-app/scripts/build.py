@@ -8,6 +8,11 @@ Reads  <project>/index.html and <project>/xr-project.json
 Writes <project>/dist/<slug>-build<N>.html   (everything inlined)
 Updates window.BUILD in index.html and build/sourceHash in the manifest.
 
+README.md and CHANGELOG.md (kit 0.32, see appdocs.py) count as part of the
+source: a change to either bumps the build. When the build goes up, the
+changelog's Unreleased lines become "## [N] - date", and both files are put
+inside the output page so they travel with it.
+
 Why one file: ClassCloud storage is content-addressed — every URL is a hash,
 there are no directories and no relative paths, so a <script src="./x.js">
 can never resolve there. Every local script is inlined here.
@@ -15,6 +20,9 @@ can never resolve there. Every local script is inlined here.
 Prints JSON: {ok, build, bumped, output, bytes}
 """
 import argparse, hashlib, json, os, re, sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import appdocs
 
 def main():
     ap = argparse.ArgumentParser()
@@ -38,13 +46,18 @@ def main():
     # The manifest is the authority; index.html's line only wins if it is ahead
     # (a regenerated or hand-restored index.html must never reset the counter).
     cur = max(int(m.group(1)), int(man.get('build') or 0))
-    masked = re.sub(r'window\.BUILD\s*=\s*\d+\s*;', 'window.BUILD = _;', src)
-    # include any local scripts in the hash, so a library change also bumps
-    for s in sorted(re.findall(r'<script\s+src="\./([^"]+)"', src)):
-        p = os.path.join(proj, s)
-        if os.path.exists(p):
-            masked += '\n<!--' + s + ':' + hashlib.sha256(open(p, 'rb').read()).hexdigest() + '-->'
-    h = hashlib.sha256(masked.encode('utf-8')).hexdigest()
+    def source_hash(src):
+        masked = re.sub(r'window\.BUILD\s*=\s*\d+\s*;', 'window.BUILD = _;', src)
+        # include any local scripts in the hash, so a library change also bumps
+        for s in sorted(re.findall(r'<script\s+src="\./([^"]+)"', src)):
+            p = os.path.join(proj, s)
+            if os.path.exists(p):
+                masked += '\n<!--' + s + ':' + hashlib.sha256(open(p, 'rb').read()).hexdigest() + '-->'
+        # and the README / changelog (only when present, so apps without them
+        # keep the hash they had)
+        masked += appdocs.hash_text(proj)
+        return hashlib.sha256(masked.encode('utf-8')).hexdigest()
+    h = source_hash(src)
 
     bumped = False
     if man.get('sourceHash') is not None and man['sourceHash'] != h:
@@ -52,6 +65,16 @@ def main():
         bumped = True
         src = re.sub(r'window\.BUILD\s*=\s*\d+\s*;', f'window.BUILD = {cur};', src, count=1)
         open(idx, 'w', encoding='utf-8').write(src)
+    # the changelog: Unreleased lines become this build's version (a bump, or
+    # the very first build), then the hash is taken again so the edit to the
+    # changelog itself is not seen as a change next time
+    changelog = None
+    cl = appdocs.read(proj, 'changelog')
+    if cl is not None and (bumped or man.get('sourceHash') is None):
+        cl2, changelog = appdocs.cut_release(cl, cur, force=bumped)
+        if changelog:
+            appdocs.write(proj, 'changelog', cl2)
+            h = source_hash(src)
     man['build'] = cur
     man['sourceHash'] = h
     json.dump(man, open(man_path, 'w', encoding='utf-8'), indent=2)
@@ -87,6 +110,9 @@ def main():
     flat = '\n'.join(lines).replace('<!--KIT-LIB-START-->', '').replace('<!--KIT-LIB-END-->', '')
     flat = flat.replace('/*BUILD_LIB_LINES*/[]', '/*BUILD_LIB_LINES*/' + json.dumps(ranges), 1)
 
+    # README + changelog inside the page, just before </body>
+    flat = appdocs.embed(flat, appdocs.docs(proj))
+
     slug = man.get('slug') or 'xr-app'
     out_dir = os.path.join(proj, 'dist')
     os.makedirs(out_dir, exist_ok=True)
@@ -99,8 +125,11 @@ def main():
             try: os.remove(os.path.join(out_dir, old))
             except OSError: pass
 
+    st = appdocs.status(proj)
     print(json.dumps({'ok': True, 'build': cur, 'bumped': bumped, 'output': out,
-                      'bytes': os.path.getsize(out)}, indent=2))
+                      'bytes': os.path.getsize(out),
+                      'readme': st['readme'], 'changelog': changelog if st['changelog'] else 'missing',
+                      'note': appdocs.note_from(appdocs.read(proj, 'changelog'), cur)}, indent=2))
     return 0
 
 if __name__ == '__main__':

@@ -11,7 +11,7 @@ description: >
   app, so the link is never behind the folder, and it always ends by putting the
   link in the chat.
 metadata:
-  version: "0.6.0"
+  version: "0.7.0"
 ---
 
 # Share XR app
@@ -64,7 +64,8 @@ its own build, verify and write-back). Otherwise: both succeed and the remote
 is on `github.com` → **route A**. Anything else (not a repo, no remote, a
 non-GitHub host, or `git` unavailable) → **route B**.
 In a Cowork session with a connected folder, stage `index.html`, every local
-`<script src="./…">` it references, and `xr-project.json` into the workspace
+`<script src="./…">` it references, `xr-project.json`, `README.md` and
+`CHANGELOG.md` into the workspace
 with the same layout first; scripts take that staged folder as `--project`.
 
 ### 2. Build
@@ -133,7 +134,9 @@ else about the repo layout matters.
 ### A5. Commit, push, publish
 
 Stage only what the site needs: the app folder's `index.html`,
-`xr-project.json` and any local libraries it references (`aframe.min.js`,
+`xr-project.json`, `README.md`, `CHANGELOG.md` (GitHub shows both on the
+repository page, and a copy made from the Pages address reads them from beside
+the page) and any local libraries it references (`aframe.min.js`,
 `cannon.iife.js`). Never commit `dist/` or `.preview/`.
 
 **Commit the way a careful developer would.** One commit per logical
@@ -353,7 +356,7 @@ be made from this session and attach the build file instead.
 ## 6. Write back and report
 
 Route A: the repo *is* the folder; nothing to write back beyond the commit.
-Route B: write `xr-project.json` — and `index.html` if `bumped` was true — back
+Route B: write `xr-project.json` — and `index.html` and `CHANGELOG.md` if `bumped` was true — back
 to the user's folder with `display: "attach"`. Do **not** write `dist/` back for
 a share; only the headset publish keeps a copy of what it uploaded.
 

@@ -8,7 +8,7 @@ description: >
   Prototypes playlist for the user's organisation, and returns the QR code to scan.
   Re-publishing updates in place — the QR code never changes.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # Publish XR app
@@ -38,8 +38,9 @@ Do these in order. Each one depends on the last.
 ### 1. Locate and stage the project
 
 Find the folder with `index.html` and `xr-project.json`. In a cloud session stage
-`index.html`, every local `<script src="./…">` it references, and
-`xr-project.json` into the workspace with the same layout. Scripts below take the
+`index.html`, every local `<script src="./…">` it references,
+`xr-project.json`, `README.md` and `CHANGELOG.md` into the workspace with the
+same layout. Scripts below take the
 staged folder as `--project`.
 
 ### 2. Build
@@ -49,7 +50,10 @@ staged folder as `--project`.
 Inlines every local script into `dist/<slug>-build<N>.html` and bumps the build
 number only if the source changed since the last build. Note `build` and `output`
 from the JSON. If it bumped, `index.html` changed — it must be written back to the
-user's folder at the end.
+user's folder at the end. The app's `README.md` and `CHANGELOG.md` count as
+source and go inside the built file (see `xr-app-rules`, "README and
+changelog"); when the build bumps, the changelog's Unreleased lines become
+this build's version, so `CHANGELOG.md` changed too.
 
 ### 3. Verify — do not skip
 
@@ -173,7 +177,7 @@ or B4) — push to Pages, or convert and update the artifact — before anything
 is rendered. Headset and link then show the same build number.
 
 Write back to the user's folder: `xr-project.json`, the `dist/` build, `qr.png`
-if new, and `index.html` if the build number bumped. Send each of these with
+if new, and `index.html` and `CHANGELOG.md` if the build number bumped. Send each of these with
 `display: "attach"` — they are files, not something to look at.
 
 Then, **last of all, send `qr.png` with `display: "render"`.** The side panel

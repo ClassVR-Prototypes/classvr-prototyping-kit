@@ -15,7 +15,7 @@ description: >
   changed in version 4", "go back to version 4", "put the old version back",
   "call this version …" and "what's the fingerprint of this version".
 metadata:
-  version: "0.8.0"
+  version: "0.9.0"
 ---
 
 # Publish to Vercel
@@ -126,9 +126,9 @@ Continue from step 1. Never ask a question `/new-xr-app` would not ask.
 ### 1. Locate and stage the project
 
 The folder with `index.html` and `xr-project.json`. In a Cowork session stage
-`index.html`, `xr-project.json`, `aframe.min.js` (the build reads the A-Frame
-version from it) and every other local `<script src="./…">` into a workspace
-folder with the same layout; scripts take that folder as the project. In a
+`index.html`, `xr-project.json`, `README.md`, `CHANGELOG.md`, `aframe.min.js`
+(the build reads the A-Frame version from it) and every other local
+`<script src="./…">` into a workspace folder with the same layout; scripts take that folder as the project. In a
 local or Claude Code session use the folder directly.
 
 ### 2. Verify the source — do not skip
@@ -152,18 +152,24 @@ is **not** uploaded here (ClassCloud and Pages use it); leave it.
 ### 3b. The version note
 
 Every publish gets a one-line, plain-English "what changed" — the line the
-history page shows next to the version number. **Write it yourself** from
-what the person asked for in this turn ("Added a lap counter above the
-track", "Made the ball bounce higher", "First version"); never ask for it. If
-they said "call this version …" or "note it as …", use their words exactly.
-Restoring an older version: "Put version N back" (and pass
-`--restored-from N`, see "Going back"). No names, no dates in the note — the
-build adds the date, and the public history carries no names by design.
+history page shows next to the version number. Since kit 0.32 it is **made
+from the changelog**: the lines under `## [Unreleased]` in `CHANGELOG.md`
+(written during the edit — see `xr-app-rules`, "README and changelog") become
+this version's section in step 3, and step 4 turns that section into the
+note. So there is normally nothing to write here; just check `build.py`'s
+`note` reads well. If the changelog has no lines for this version,
+`build.py` reports `"changelog": "empty"` and writes a placeholder — add a
+real line with `appdocs.py add` and rebuild rather than publishing that.
+
+Pass `--note` only when the person said "call this version …" or "note it as
+…" (use their words exactly), or for an app with no `CHANGELOG.md`. No names,
+no dates in the note or the changelog — the build adds the date, and
+everything published carries no names by design.
 
 ### 4. Slim page, library and history
 
     python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/vercel_build.py \
-        "<project>" --out "<scratch>/dist-vercel" --note "<the version note>" \
+        "<project>" --out "<scratch>/dist-vercel" [--note "<their words>"] \
         [--url "https://<project name>.vercel.app/"]      # first publish only
 
 **First publish:** work out the project name now (step 6, "Project name"),
@@ -203,6 +209,14 @@ for older versions that are never re-sent), `history` (`current`, `note`,
 plumbing, so every app made from the same template shares it), `libBase`
 (`https://xr-kit-lib-<kit>.vercel.app`), `aframe`, `extraLibs`, and the
 sha256 of every file.
+
+**README and changelog.** Both go inside the page (so every `/v/<N>/` and
+every copy carries its own), and the deploy set also gets `README.md`,
+`CHANGELOG.md` and `about/index.html` — the readable "About this app" page,
+linked from `/history` and from the page's QR card. `history.json` gains
+`"about": "about/"`. The build links each changelog version to its `/v/<N>/`
+address, so `CHANGELOG.md` may change here too (those link lines don't count
+as a change to the app) — write it back in step 9.
 
 The build also writes any `\uXXXX` / `\xXX` escape for a character above U+007F in the page as the plain character (it prints how many), because the upload can do that conversion on its own and the fingerprint would then no longer match. If a publish ever reports a fingerprint mismatch anyway, rebuild from the app's `index.html` and publish again; never hand-edit the page or the recorded fingerprint to make them agree.
 
@@ -417,7 +431,8 @@ a code to print or put on a slide:
 
 Write `xr-project.json` (it always changed: `vercel.versions` gained an
 entry), the two new files under `versions/` (the build printed their path),
-and `index.html` if `bumped`
+`CHANGELOG.md` (the version's section and link lines), `README.md` if it was
+edited, and `index.html` if `bumped`
 back to the user's folder (Cowork: `SendUserFile` `display: "attach"`, then
 `device_commit_files`; in a repo, commit them as any other edit). Nothing is
 rendered: **the URL is the last line of the reply, on its own line**, so the
@@ -443,6 +458,10 @@ kit app on Vercel, not only the person's own). Answer in a sentence or a
 short list: version number, date, note; add the fingerprint (first eight
 characters) only when two people need to be sure they mean the same one.
 Point them at `<vercel.url>/history` if they want to look or click through.
+For more than the one-line note ("what exactly changed in version 4", "what
+is this app", "how do I play it"), read `<vercel.url>/CHANGELOG.md` or
+`<vercel.url>/README.md` (or the folder's own copies) and answer from those;
+`<vercel.url>/about/` is the readable page to send someone.
 Anyone with the address can read it — say so if they ask who can see it.
 
 ## Going back to a version
@@ -476,12 +495,21 @@ Vercel plan and the history stays a straight line:
 
        python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/vercel_build.py \
            --unslim "<restore page>" --lib-dir "<scratch>/lib" \
-           --out "<project>/index.html" --expect-sha1 <that version's sha1 from vercel.versions>
+           --out "<project>/index.html" --expect-sha1 <that version's sha1 from vercel.versions> \
+           --docs readme
 
    `--expect-sha1` refuses a page that does not match the history — fetch
-   again rather than restoring something unverified.
-4. Steps 2–9 as normal, with `--note "Put version <M> back" --restored-from <M>`
-   in step 4. The result is a **new** version (N+1) whose page is identical
+   again rather than restoring something unverified. `--docs readme` puts
+   back that version's README (it describes what is now live) but keeps the
+   current changelog, which is a straight line and never goes backwards.
+   Then record the restore in it:
+
+       python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/appdocs.py add "<project>" \
+           --category Changed --entry "Put version <M> back (<its note>)."
+
+   (No `CHANGELOG.md` yet — an app from before kit 0.32 — → `appdocs.py init`
+   with the same entry.)
+4. Steps 2–9 as normal, with `--restored-from <M>` in step 4. The result is a **new** version (N+1) whose page is identical
    to version M apart from its number; the history page tags it "restored
    from version M". Versions between M and N stay in the history — say so:
    "version 4 is back on the headset, as version 7; 5 and 6 are still there
