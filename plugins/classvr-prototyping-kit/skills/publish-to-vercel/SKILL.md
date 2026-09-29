@@ -2,10 +2,11 @@
 name: publish-to-vercel
 description: >
   This skill should be used when the user asks to "host it on Vercel", "put my XR
-  app on Vercel", "publish to Vercel", "refresh the Vercel page", invokes
-  /publish-to-vercel, or creates a new XR app naming Vercel as its home ("make a
-  VR app called X, hosted on Vercel"). It is route C of /share-xr-app: chosen
-  when the user names Vercel or the app's xr-project.json has `vercel.url`, and
+  app on Vercel", "publish to Vercel", "refresh the Vercel page", "publish my XR
+  app", "put it on the headset", "send it to the headsets", "give me the QR
+  code", invokes /publish-to-vercel, or creates a new XR app naming Vercel as its
+  home ("make a VR app called X, hosted on Vercel"). It is route C of
+  /share-xr-app — the default for every app outside a GitHub repository — and is
   then used after every edit. It builds a slim page that loads the kit's
   plumbing from a shared library, deploys it with the person's own Vercel token
   (or the connector) — no Git, no terminal — verifies it live at a stable public URL and ends with that
@@ -15,7 +16,7 @@ description: >
   changed in version 4", "go back to version 4", "put the old version back",
   "call this version …" and "what's the fingerprint of this version".
 metadata:
-  version: "0.9.0"
+  version: "0.11.0"
 ---
 
 # Publish to Vercel
@@ -43,9 +44,13 @@ so a fifty-version app costs the same to publish as a two-version one. The
 words to use with the person are **save, version, history, go back, make my
 own copy, fingerprint** — never commit, deploy, rollback, hash or SHA.
 
-This route is **opt-in and additive**: an app is on Vercel only if the user
-asked for it; `/share-xr-app` routes A (GitHub Pages) and B (artifact) and the
-ClassCloud publish keep working, on the same build numbers.
+This is **the kit's default route**: every app that does not live in a GitHub
+repository is published here (`/share-xr-app` route C), and it is how an app
+gets onto a headset — the page's own QR code. The only other route is GitHub
+Pages (`/share-xr-app` route A), which shares the same build numbers. The
+Claude Artifact link and the ClassCloud upload were removed in kit 0.35; an
+app whose manifest still has `classcloud` or `artifact` fields just ignores
+them, and its first publish here gives it a new address.
 
 ## Outcome
 
@@ -143,11 +148,12 @@ continue but say the build was not verified. Skip this step only when
 
 ### 3. Build number
 
-    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/build.py --project "<project>"
+    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/build.py --project "<project>"
 
 Same as every other route: bumps `build` in `xr-project.json` only if the
 source changed. Note `build` and `bumped`. The single-file output in `dist/`
-is **not** uploaded here (ClassCloud and Pages use it); leave it.
+is **not** uploaded here (it is the reference copy error lines can be looked
+up in); leave it.
 
 ### 3b. The version note
 
@@ -211,9 +217,10 @@ plumbing, so every app made from the same template shares it), `libBase`
 sha256 of every file.
 
 **README and changelog.** Both go inside the page (so every `/v/<N>/` and
-every copy carries its own), and the deploy set also gets `README.md`,
-`CHANGELOG.md` and `about/index.html` — the readable "About this app" page,
-linked from `/history` and from the page's QR card. `history.json` gains
+every copy carries its own), and the deploy set also gets
+`about/index.html` — the readable "About this app" page, linked from
+`/history` and from the page's QR card. The .md files themselves are not
+served on their own (since 0.34.1). `history.json` gains
 `"about": "about/"`. The build links each changelog version to its `/v/<N>/`
 address, so `CHANGELOG.md` may change here too (those link lines don't count
 as a change to the app) — write it back in step 9.
@@ -232,7 +239,8 @@ If `extraLibs` is not empty (the app bundles `cannon.iife.js` or another
 library), that file must also be served from `libBase`. Check with
 `web_fetch_vercel_url` `<libBase>/<name>`; if it is not there, **stop** and
 say: this app uses an extra library the Vercel route doesn't host yet — use
-the Pages link or `/publish-xr-app` for it. Do not push a large library
+the Pages link for it if the app is in a GitHub repository; otherwise say it
+can't be put on a headset yet. Do not push a large library
 through the deploy tool.
 
 ### 5. Make sure the library is hosted
@@ -424,7 +432,7 @@ render a QR image** for the chat or the folder (a `vercel-qr.png` left in an
 app folder by an older kit is harmless; leave it). Only if the person asks for
 a code to print or put on a slide:
 
-    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/make_qr.py \
+    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/make_qr.py \
         --url "<vercel.url>/" --out "<project>/vercel-qr.png"
 
 ### 9. Write back and report
@@ -459,9 +467,17 @@ short list: version number, date, note; add the fingerprint (first eight
 characters) only when two people need to be sure they mean the same one.
 Point them at `<vercel.url>/history` if they want to look or click through.
 For more than the one-line note ("what exactly changed in version 4", "what
-is this app", "how do I play it"), read `<vercel.url>/CHANGELOG.md` or
-`<vercel.url>/README.md` (or the folder's own copies) and answer from those;
+is this app", "how do I play it"), read the folder's own `CHANGELOG.md` /
+`README.md`, or for someone else's app `<vercel.url>/about/` (every
+`/v/<N>/` page also carries both inside it), and answer from those;
 `<vercel.url>/about/` is the readable page to send someone.
+
+The history page also has a **Make my own copy** button next to every
+version: one click saves that version as an app folder (Chrome/Edge open a
+folder picker; other browsers download a .zip) that they add to a Cowork task —
+the same result as `/copy-xr-app`, without a chat. Mention it when someone
+asks how others can build on their app. It needs the app's history page to
+be on kit 0.33 or later, i.e. one publish after the kit update.
 Anyone with the address can read it — say so if they ask who can see it.
 
 ## Going back to a version
@@ -504,7 +520,7 @@ Vercel plan and the history stays a straight line:
    current changelog, which is a straight line and never goes backwards.
    Then record the restore in it:
 
-       python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/appdocs.py add "<project>" \
+       python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/appdocs.py add "<project>" \
            --category Changed --entry "Put version <M> back (<its note>)."
 
    (No `CHANGELOG.md` yet — an app from before kit 0.32 — → `appdocs.py init`
@@ -571,9 +587,9 @@ flag, or the numbers that show it ran well). Ignore a `flag` post whose `d`
 ends in `PASS the "something wrong" marker works` — that is the self-check
 pressing F during `?kitcheck`, not a person.
 
-Nothing in either place → fall back to the ClassCloud log (`/check-headset`
-steps 2–4), which still works: the diary's logbook is in the shared library
-too. Error codes: an error in the app's own code keeps its `<build>-<line>`
+Nothing in either place → the session is still running (ask them to leave VR),
+or the page never ran its first script — the history cannot see that; ask
+what the headset showed. Error codes: an error in the app's own code keeps its `<build>-<line>`
 code with the line counted in the slim page (open `dist-vercel/page/index.html`
 from the build, or rebuild it); an error inside the shared library is coded
 `<build>-lib`.
@@ -604,7 +620,8 @@ from the build, or rebuild it); an error inside the shared library is coded
 - Anyone who knows the address can post to `/api/log` and read `/api/reports`
   (the page is public); the diary carries no personal data by construction.
 - Everyone publishing needs their own Vercel account, and Vercel accounts are
-  16+ — this route is for staff. Pupils get the app through ClassCloud.
+  16+ — this route is for staff. Pupils need no account: they open the
+  published page from its QR code.
 - The version history is public along with the page, by design: anyone with
   the address can list, play and copy every version. It carries no names.
   Versions published before kit 0.25 are not in it — an app already on

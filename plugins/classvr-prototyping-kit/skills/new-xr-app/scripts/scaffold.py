@@ -19,7 +19,7 @@ Prints a JSON summary on stdout. Exit code 0 on success.
 import argparse, json, os, re, shutil, sys, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, '..', '..', 'publish-xr-app', 'scripts'))
+sys.path.insert(0, os.path.join(HERE, '..', '..', 'publish-to-vercel', 'scripts'))
 import appdocs
 ASSETS = os.path.join(HERE, '..', 'assets')
 
@@ -102,21 +102,6 @@ def main():
         'build': 1,
         'sourceHash': None,
         'libraries': ['aframe'],
-        'classcloud': {
-            'organizationId': None,
-            'playlistId': None,
-            'playlistName': 'XR Prototypes',
-            'activityId': None,
-            'lastPublished': None,
-            'lastUrl': None,
-            'qrPayload': None
-        },
-        'artifact': {
-            'url': None,
-            'owner': None,
-            'build': None,
-            'lastShared': None
-        },
         'pages': {
             'url': None,
             'repo': None,

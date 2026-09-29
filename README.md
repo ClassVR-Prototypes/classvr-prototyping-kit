@@ -47,16 +47,16 @@ so it is installed by default for everyone.
 `plugins/classvr-prototyping-kit/skills/` follow the open
 [Agent Skills](https://agentskills.io) format. The knowledge skills
 (`xr-app-rules` and its references) work anywhere that loads a `SKILL.md`. The
-doing skills (`new-xr-app`, `preview-xr-app`, `publish-xr-app`, `check-headset`)
-rely on Python, a headless browser and the Eduverse (ClassCloud) connector, so
+doing skills (`new-xr-app`, `preview-xr-app`, `publish-to-vercel`, `check-headset`)
+rely on Python, a headless browser and a browser pane that can reach Vercel, so
 outside Claude they need an equivalent sandbox or a server to run against.
 
 ## What it needs
 
-- A ClassVR / ClassCloud account, with the Eduverse connector enabled in Claude,
-  for publishing to headsets and reading headset logs.
-- For sharing on a permanent link: Claude Artifacts (`share-xr-app`).
-- Nothing else. A-Frame and cannon-es are bundled inside the plugin.
+- A Vercel account (free Hobby plan is enough to try it; staff use belongs on
+  a Pro team). `/connect-vercel` sets it up once; no connector needed.
+- Nothing else. A-Frame and cannon-es are bundled inside the plugin (apps that
+  use cannon-es can't go on Vercel yet).
 
 ## Updating the kit
 
@@ -68,11 +68,11 @@ them something changed.
 
 ## Status
 
-Version 0.23.0, September 2026 (adds the opt-in Vercel route, `/publish-to-vercel`, with its diary relay). Built and tested against the ClassVR Xcelerate
+Version 0.35.0, September 2026 (Vercel is the default route; the Claude Artifact link and the ClassCloud upload have been removed). Built and tested against the ClassVR Xcelerate
 headset (Wolvic browser). Prototypes made with the kit are ordinary
 HTML pages. In a GitHub repository the kit publishes them to GitHub Pages on
 every change (the `share-xr-app` skill installs the workflow); outside a repo it
-uses a Claude Artifact for the desktop link and ClassCloud for headsets. See the plugin README for the
+publishes them to Vercel, where the page shows its own QR code for headsets. See the plugin README for the
 constraints that keep an app working on the headset.
 
 Maintained by Avantis — Project Ptah.

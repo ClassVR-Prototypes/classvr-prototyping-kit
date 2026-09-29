@@ -14,8 +14,8 @@ Each app folder carries two plain-text files beside index.html:
 
 Neither file carries names or e-mail addresses — both are published.
 
-How they travel. Every build (build.py for ClassCloud / Artifact, and
-vercel_build.py for Vercel) puts both files inside the page as
+How they travel. Every build (build.py's single file and
+vercel_build.py's Vercel page) puts both files inside the page as
 
   <script type="text/markdown" id="xr-kit-readme">…</script>
   <script type="text/markdown" id="xr-kit-changelog">…</script>
@@ -262,6 +262,7 @@ def version_section(text, n):
 
 def plain(md):
     md = re.sub(r'`([^`]*)`', r'\1', md)
+    md = re.sub(r'<(https?://[^>\s]+)>', r'\1', md)
     md = re.sub(r'\[([^\]]+)\]\([^)]*\)', r'\1', md)
     md = re.sub(r'(\*\*|__)(.+?)\1', r'\2', md)
     md = re.sub(r'(?<![\w*])[*_](.+?)[*_](?![\w*])', r'\1', md)
@@ -587,7 +588,6 @@ def about_page(name, readme, changelog, url=None, version=None):
     links = ['<a href="%s">Open the app</a>' % H.escape((app + '/') if app else '../')]
     if app:
         links.append('<a href="%s/history">Every version</a>' % H.escape(app))
-    links += ['<a href="../README.md">README.md</a>', '<a href="../CHANGELOG.md">CHANGELOG.md</a>']
     body_r = md_html(readme) if readme else '<p>No description has been written for this app yet.</p>'
     body_c = md_html(pretty_changelog(changelog)) if changelog else '<p>No changelog has been kept for this app yet.</p>'
     ver = ' · version %s' % version if version else ''

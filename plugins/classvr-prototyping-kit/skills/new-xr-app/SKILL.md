@@ -10,15 +10,16 @@ description: >
   builds a minimal playable version of the chosen one. No terminal, no libraries to
   install.
 metadata:
-  version: "0.6.0"
+  version: "0.7.0"
 ---
 
 # New XR app
 
 Create a working WebXR project folder from the kit template, then put it on a
-permanent link (`/share-xr-app`). The result is viewable in any desktop browser
-the moment the turn ends and is ready to publish to a headset with
-`/publish-xr-app`. The user should never have to run anything or open a file.
+permanent link (`/share-xr-app`, which is Vercel for any folder outside a
+GitHub repository). The result opens in any desktop browser the moment the
+turn ends, and the same link opens on a headset from the QR code the page
+shows. The user should never have to run anything or open a file.
 
 ## What gets created
 
@@ -79,7 +80,7 @@ first pass with reasonable confidence → **skip the question** and scaffold the
 plain starter scene. When in doubt, this is the case. A wrong guess costs the
 user a dialog; the empty scene costs nothing.
 
-Never ask this question on `/publish-xr-app`, and never ask it twice.
+Never ask this question when publishing an existing app, and never ask it twice.
 
 ### 2b. Decide which headset it is for (`--dof`)
 
@@ -154,6 +155,9 @@ Build a **minimal playable slice**, not a game:
   no external assets, no fonts, no CDN.
 - Physics (`cannon-es`) only if things genuinely fall, roll or get thrown — see
   "Physics" below. Simple tweening and hit-testing don't need it.
+- Microphone (recording, voice, push-to-talk) → the `xr-app-rules`
+  "Microphone" recipe from the start: ask once when the page opens, keep the
+  stream, record from it on press. Never ask for the mic from a press.
 - **Update `window.KIT_CONTROLS`** with one line per new interaction, in
   `headset` and, where there's a keyboard/mouse equivalent, `desktop`.
 - **Add a self-check to `window.KIT_CHECKS`** for the core interaction — the
@@ -186,22 +190,18 @@ from the start position. If they aren't, move them, don't ship it.
 
 Run `/share-xr-app` from its step 1 (route choice) — the build and preview
 check are already done, so skip its steps 2–3. Where the app lives decides the
-kind of link — unless the request **named Vercel** as the host ("make X,
-hosted on Vercel", "…and put it on Vercel"): then it is **route C**, deliver
-the project files to the user's folder and run `/publish-to-vercel` from its
-step 3; make no artifact and no Pages commit for it. Otherwise:
+kind of link:
 
-- **Inside a GitHub repository** (Claude Code, a cloned repo): **route A,
-  GitHub Pages.** Commit the new folder, push, and the app gets a public URL
-  like `https://<owner>.github.io/<repo>/<slug>/`. Do **not** make an artifact
-  as well — one link per app, and the Pages one is the one that also works on a
-  headset. If the repo has never published before, the share skill adds the
-  workflow and tells the user the one-time Pages setting.
-- **A plain folder** (Cowork with a connected folder, no repo): **route B,
-  Claude Artifact.** Deliver the project files to the user's folder first
-  (`SendUserFile` with `display: "attach"`, then `device_commit_files`), then
-  convert the verified build with `artifact.py` and publish it; write
-  `xr-project.json` back again afterwards (it changed).
+- **A plain folder** (Cowork with a connected folder, no repo), or the request
+  **named Vercel** ("make X, hosted on Vercel"): **route C, Vercel** — the
+  normal case. Deliver the project files to the user's folder, then run
+  `/publish-to-vercel` from its step 3 (it runs `/connect-vercel` first if the
+  person has no Vercel connection yet). Make no Pages commit for it.
+- **Inside a GitHub repository** (Claude Code, a cloned repo) and Vercel not
+  named: **route A, GitHub Pages.** Commit the new folder, push, and the app
+  gets a public URL like `https://<owner>.github.io/<repo>/<slug>/`. If the
+  repo has never published before, the share skill adds the workflow and tells
+  the user the one-time Pages setting.
 
 Every app leaves this skill with a link recorded in `xr-project.json`.
 
@@ -209,11 +209,10 @@ Every app leaves this skill with a link recorded in `xr-project.json`.
 
 One or two sentences: the folder name; if a concept was built, what the game
 does in one line and how to play it (click to look, W/A/S/D to move, Q/E to
-turn; on a headset, **Enter VR**); then how to get it on a headset — on routes A and C
-"the page has a QR code in its top-right corner — click it to enlarge, then
-point the headset's scanner at it", on route B
-"`/publish-xr-app` puts it on the headset". Do not explain libraries,
-manifests, artifacts, git, or build numbers unless asked.
+turn; on a headset, **Enter VR**); then how to get it on a headset — "the
+page has a QR code in its top-right corner — click it to enlarge, then point
+the headset's scanner at it". Do not explain libraries, manifests, git, or
+build numbers unless asked.
 
 **What appears on screen.**
 
@@ -223,19 +222,15 @@ manifests, artifacts, git, or build numbers unless asked.
   pull request is already merged — never offer to do this, do it); only if
   both hands-free routes failed, "once you press Create PR and Merge". A brand-new repo also needs the one-time
   Pages setting — say so if the share skill just added the workflows.
-- Route B: the artifact card is the last thing the turn produces; don't paste
-  the URL as well.
 - Route C: **the Vercel URL is the last line of the reply, on its own line** —
   it is live at once. No QR image: the page shows its own.
 
 Do **not** render `preview.png` in either case — a screenshot would only push
 the link away. Project files are attached, not rendered.
 
-If the request asked to create **and** publish ("make X and put it on the
-headset"), continue straight into `/publish-xr-app` without stopping to report
-first: share (step 7) happens before publish, and the QR code is rendered
-**last** — it is the thing the user needs to see. The organisation question
-(first publish only) is the only other question the combined flow may ask.
+"Make X and put it on the headset" is the same flow: the link from step 7 is
+how it gets onto the headset (the page's own QR code). Don't render a QR image
+unless asked for one to print.
 
 ## When the user then asks for content
 

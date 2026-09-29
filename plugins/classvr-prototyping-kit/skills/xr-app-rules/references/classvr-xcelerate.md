@@ -78,11 +78,13 @@ and `pose_override` are stripped from the URL the page sees; the xpath param
 is kept. For an A-Frame app the xpath would be
 `//a[contains(@class,'a-enter-vr-button')]` (A-Frame's VR button; the kit's
 `enterVR` colour wrapper still runs because the click goes through A-Frame).
-Untested on a kit app — a candidate for `/publish-xr-app`.
+Untested on a kit app.
 
 **Permissions.** WebXR is **granted automatically** (no prompt) unless the
 site has been explicitly blocked in Wolvic's settings. Audible autoplay is
 allowed when launched immersive (the default). Inaudible autoplay always.
+The **microphone** prompts on every `getUserMedia` call and is never
+remembered (see "Observed" below).
 
 **Controllers as WebXR sees them.** Mapping `AvantisCVR655`: OpenXR profile
 `/interaction_profiles/oculus/touch_controller`; WebXR `profiles` =
@@ -124,7 +126,7 @@ headset's Back/home you leave Wolvic and the `end` beacon may not be written
 `Log.d("VRB[Session]", "onLoadRequest: " + uri)` for every main-frame
 navigation, including same-document `replaceState`/hash changes, and the
 release build is not minified — this is the logbook channel
-(`check-headset/references/logbook.md`). Web console output is **not**
+(`logbook.md` beside this file; retired as a read route in kit 0.35). Web console output is **not**
 forwarded to the log.
 
 **Passthrough.** The fork carries upstream Wolvic's WebXR AR module
@@ -145,10 +147,22 @@ own menu has "Toggle passthrough" (available in kiosk mode too).
   browser-level "Toggle passthrough" also works. Recipe: `xr-app-rules`,
   "Passthrough".
 
+- **Microphone works, but the permission is never remembered** (Mic Test
+  build 1, 29 Sep 2026). `getUserMedia({audio})` shows Wolvic's prompt;
+  after Allow the stream opened in 2–2.7 s (the prompt time) and recorded
+  and played back fine. Every later `getUserMedia` call prompted again,
+  even with "remember my choice" ticked, in the flat page and in VR.
+  `navigator.permissions.query({name:'microphone'})` stayed `prompt` after a
+  grant, and `enumerateDevices` showed 3 audio inputs with blank labels. A
+  stream kept open from before VR kept working inside VR. Web Audio started
+  `suspended` and was `running` after the first tap. Recipe: `xr-app-rules`,
+  "Microphone" (ask once at load, keep the stream).
+
 - Controllers report as `meta-touch`; VR enter/exit, flags and 72 fps all
   read back through the logbook (Logbook Test build 2, 8 Sep 2026).
 - The device checks in with ClassCloud about every 10 min while awake and
-  never while asleep, which sets the latency of `/check-headset`.
+  never while asleep (this set the latency of the old ClassCloud log route;
+  since kit 0.35 `/check-headset` reads the app's Vercel history instead).
 - **3DoF is simulated.** The device is 6DoF; a kit app with `dof: 3` throws
   positional tracking away itself. The real ClassVR 3DoF headsets do not run
   Wolvic, so this is the only device kit apps are tested on.
@@ -156,10 +170,10 @@ own menu has "Toggle passthrough" (available in kiosk mode too).
 ## Unknown — fill in when found, never invent
 
 Battery life, weight, IPD adjustment range, the cameras themselves (passthrough works — see above), audio
-(speakers, jack), the tracking volume, the exact runtime-advertised refresh
+(speakers, jack), whether a microphone ask made at page load with no tap first shows its prompt, the tracking volume, the exact runtime-advertised refresh
 rate list (72 is inferred from the measured fps and the selection rule), and
-whether ClassCloud preserves the `wolvic-launchimmersive-…` query parameter
-on a URL activity.
+and (no longer needed by the kit) whether ClassCloud preserves the
+`wolvic-launchimmersive-…` query parameter on a URL activity.
 
 ## What follows for a kit app
 

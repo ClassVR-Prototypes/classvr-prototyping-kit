@@ -5,12 +5,13 @@ description: >
   with the ClassVR Prototyping Kit — any folder containing xr-project.json — including
   requests like "add a table", "make the ball bounce", "put a sign here", "add text",
   "the throw feels weak", "it looks washed out on the headset", "the button doesn't
-  work in VR", "add passthrough", "let me see my room", or "why can't I grab it".
+  work in VR", "add passthrough", "let me see my room", "record my voice", "use the
+  microphone", "push to talk", or "why can't I grab it".
   It holds the hard-won constraints that keep
   an app working on a ClassVR headset, so ordinary prompts don't reintroduce known
-  failures, plus ready recipes such as passthrough (AR).
+  failures, plus ready recipes such as passthrough (AR) and the microphone.
 metadata:
-  version: "0.8.0"
+  version: "0.11.0"
 ---
 
 # Rules for editing a kit XR app
@@ -29,9 +30,9 @@ in a `<script>` placed **before** `<a-scene>` so it is registered when the scene
 initialises.
 
 **Never load anything from a CDN or any external url.** Libraries are bundled
-files beside `index.html`; assets are data URIs or separate ClassCloud uploads.
-The published file is content-addressed and has no relative paths, and school
-networks block arbitrary hosts. A CDN 404 fails silently and the page still
+files beside `index.html`; assets are data URIs. The kit's publish decides
+where libraries are served from (Vercel loads the kit's shared library and
+A-Frame from known addresses), and school networks block arbitrary hosts. A CDN 404 fails silently and the page still
 looks like a working app.
 
 **Write special characters as themselves.** A long dash, curly apostrophe, degree sign or accented letter goes into the file as the character itself (`'Don’t — go'`), never as an escape like `\u2014` or `\u2019`. Escapes can be turned into the plain character on the way to Vercel or into a file, which changes the version's fingerprint and makes the next publish fail its check. Quote marks and line breaks inside strings are the exception: keep those escaped (`\'`, `\n`). In HTML text, the character itself or a named entity (`&mdash;`) are both fine.
@@ -110,13 +111,18 @@ checks, controls. Diagnostics for *you* go to the console (see below).
 
 ## Physics
 
-**A-Frame and three.js have no physics.** For anything that falls, rolls, bounces
-or is thrown, use the bundled `cannon-es`: copy
+**A-Frame and three.js have no physics.** First ask whether the motion can be
+worked out from the textbook formulas instead (a block sliding down a ramp, a
+projectile's arc): that is exact, easy to self-check, and needs no library —
+which matters, because **the Vercel route cannot host `cannon.iife.js` yet**,
+so an app that uses it cannot be published outside a GitHub repository. Only
+when real collisions are needed (stacking, bouncing off each other, throwing
+into a pile), use the bundled `cannon-es` — and say in one line, before
+building it, that this app won't go on the Vercel link yet: copy
 `${CLAUDE_PLUGIN_ROOT}/skills/new-xr-app/assets/cannon.iife.js` beside
 `index.html`, add `<script src="./cannon.iife.js"></script>` after the A-Frame
 tag, and add `"cannon"` to `libraries` in `xr-project.json`. Do not use
-`aframe-physics-system` (lags releases; Ammo driver needs a `.wasm` file, which
-single-file publishing cannot carry).
+`aframe-physics-system` (lags releases; its Ammo driver needs a `.wasm` file).
 
 **Create every body twice** — a `CANNON.Body` and a `THREE.Mesh` — and copy
 body → mesh in `tick()`. **Set rotation on both**, and store each body's starting
@@ -244,8 +250,8 @@ away with this recipe. **Proven on the ClassVR Xcelerate 23 Sep 2026**
    enterAREnabled: true"` to `<a-scene>` (keep the existing attributes —
    A-Frame 1.7 reads `xr-mode-ui`; the template's `vr-mode-ui` is inert).
    A-Frame then shows an **AR** button beside the VR button in the flat
-   window, and only where the browser supports `immersive-ar`, so desktop and
-   the artifact link are unaffected. Never enter AR automatically; the
+   window, and only where the browser supports `immersive-ar`, so desktop is
+   unaffected. Never enter AR automatically; the
    player chooses AR or VR before going in (a session can't switch mode —
    exit and press the other button).
 2. **Hide what would cover the room.** Add `hide-on-enter-ar` to the sky
@@ -281,6 +287,58 @@ have no passthrough — say so in one line when the app is `dof: 3`.
 The reference app is `15 - Passthrough Test/Passthrough Test/` in the
 project folder (five boxes, a mode sign reading "Passthrough (AR)").
 
+## Microphone (recording, voice, speech)
+
+When an app needs the microphone — "record my voice", "push to talk", "say
+the answer", "voice notes", a loudness meter, speech — add it straight away
+with this recipe. **Tested on the ClassVR Xcelerate on 29 Sep 2026** (Mic Test
+build 1): the microphone works, but **Wolvic never remembers the
+permission**. That holds even with "remember my choice" ticked, and in the
+flat page and inside VR alike. Every `getUserMedia()` call shows the prompt
+again, `navigator.permissions.query({name:'microphone'})` still says
+`prompt` after a grant, and device labels stay blank. A stream that *was*
+granted keeps working, including after Enter VR. So:
+
+1. **Ask once, first thing, and keep the stream for the whole visit.** Copy
+   the text of `assets/mic-access.js` (beside this file) into a `<script>`
+   before `<a-scene>` — inline, like every other component — and put
+   `<a-entity mic-access></a-entity>` in the scene. It asks when the page
+   opens, before VR, so the player allows it once while they can still see
+   the page. It shows an **Allow microphone** button at the bottom of the
+   page for as long as the mic isn't open (hidden in VR), and it asks once
+   more on Enter VR if the mic still isn't open (the prompt appears inside
+   VR too), with an in-scene reminder. It logs every step as `[mic]` lines.
+2. **Never call `getUserMedia` from a press.** Holding the trigger or a
+   button to talk would pop the prompt every time, and letting go to answer
+   it ends the recording before it starts (0 bytes — seen on the headset).
+   Record from the open stream: `const h = KIT_MIC.record()` on press,
+   `h.stop().then(blob => …)` on release; `KIT_MIC.play(blob)` plays it
+   back. `record()` returns null while the mic isn't ready, so say so in
+   the scene ("Microphone not ready — allow it when asked") rather than
+   failing silently.
+3. **Never stop the stream's tracks** to "turn the mic off". Stopping means
+   asking again, which means the prompt again. To mute, set
+   `track.enabled = false`, or just don't record.
+4. **Controls line:** `'When the page opens, allow the microphone (the
+   prompt comes back every visit — the headset doesn't remember it)'` as
+   the first line of `KIT_CONTROLS.headset`.
+5. **Self-check:** `'the microphone is asked for as soon as the page
+   opens'` — expect `window.KIT_MIC.asks >= 1` and `window.KIT_MIC.state`
+   to be one of `asking`, `ready`, `blocked`, `unsupported` (the preview
+   browser has no microphone, so don't expect `ready`). For push-to-talk,
+   check that a press with the mic not ready leaves a visible "not ready"
+   message and doesn't call `getUserMedia` again while one is pending.
+6. **Hosting:** the mic needs a top-level secure page. Vercel and GitHub
+   Pages links work; a page embedded in another site's frame generally
+   doesn't. The desktop preview and
+   Claude's built-in browser also have no microphone, so real results come
+   only from a headset or a person's own browser; read them back with
+   `/check-headset` or the app's `/api/reports`.
+
+Still unknown (record it in `references/classvr-xcelerate.md` when found):
+whether Wolvic shows the prompt for an ask made at page load with no tap
+first. The recipe's Allow button covers the case where it doesn't.
+
 ## Colour on the headset
 
 **Wolvic double-encodes sRGB.** `xr-kit` already emits linear output while
@@ -296,14 +354,13 @@ fullscreen on a monitor goes dark and over-saturated.
 If a scene looks right on a monitor and washed out in a headset: lifted midtones
 mean one encode too many, dark and contrasty means one too few.
 
-## The link has no VR button
+## A page inside a frame has no VR button
 
-A kit app opened from its artifact link runs inside the viewer's frame, and
-that frame blocks WebXR: `isSessionSupported` throws `SecurityError`, A-Frame
-shows no VR button, and the panel says "blocked inside a frame". Opening the
-page on its own from inside the frame is blocked too. This is not a bug in the
-app and cannot be fixed from inside it; headsets use the ClassCloud build via
-the QR code. Don't add workarounds.
+If someone embeds a kit app inside another page's frame (an LMS, a slide
+tool), the frame usually blocks WebXR: A-Frame shows no VR button and the
+panel says "blocked inside a frame". That is the embedding page's rule, not a
+bug in the app, and cannot be fixed from inside it. Headsets open the
+published Vercel (or Pages) link from its QR code. Don't add workarounds.
 
 ## Desktop mouse: right-drag looks, left-click is the trigger
 
@@ -311,7 +368,7 @@ Desktop look is **right-click-and-drag**, everywhere: `look-controls="pointerLoc
 false"` on `#head`, with look-controls' mouse-down re-pointed at button 2 by the
 block at the top of the script (keep it). A held button makes the browser
 capture the pointer, so dragging keeps turning the camera even after the mouse
-leaves the artifact frame — the one thing every "click once, then the mouse
+leaves the window — the one thing every "click once, then the mouse
 looks" variant could not do inside an embed (the frame refuses pointer lock;
 the soft-look / edge-turn imitations tried in Sept 2026 stalled at the edge or
 felt unnatural and were removed on Luke's decision).
@@ -381,19 +438,14 @@ They cannot, and the kit is built so you don't need them to. In order:
 3. **Reproduce in a check.** If the report is "the ball doesn't appear", write
    the check that presses the trigger and counts balls, run the preview, and
    read the diary. One readout beats three guesses.
-4. **Read the reports before asking anyone anything.** Every session posts
-   its diary somewhere Claude can read it, whichever way the app was opened:
-   - **On the link** (`artifact.mailbox` true): `Artifact action: "read_db"`,
-     `url` = `artifact.url`, `db_op: "query"`, `collection: "reports"`,
-     ordered by `updated` desc.
-   - **On a headset** (the ClassCloud copy): the diary is written into the
-     headset's own log — run `/check-headset`. It asks the headset for the log
-     through ClassCloud (the player must be back on the home screen; it takes
-     a few minutes), decodes the diary, and gives you the same fields.
-   If a report matches what the user describes (same build, an `errorList`,
-   the `events` before it), you have the whole story — say what you found in
-   one plain sentence, then fix. Only fall back to asking for the code when
-   there is no link and no headset log (a local double-clicked file).
+4. **Read the reports before asking anyone anything.** An app on Vercel
+   posts its diary to its own play history from every headset and browser
+   that opens the link — run `/check-headset`, which reads it back with the
+   same fields. If a report matches what the user describes (same build, an
+   `errorList`, the `events` before it), you have the whole story — say what
+   you found in one plain sentence, then fix. Only fall back to asking for
+   the code when there is no history (a GitHub Pages app, a local
+   double-clicked file, or a page that never loaded).
 5. **Look for flags.** Bugs that never throw — the ball falls through the
    floor, nothing happens on a press — leave no code. For those the player
    marks the moment: on a headset both triggers squeezed and held for two
@@ -401,7 +453,7 @@ They cannot, and the kit is built so you don't need them to. In order:
    desktop the F key.
    That writes a `flag` entry to the diary, a `flags` list of timestamps to
    the report (status `flagged`), shows "Marked for Claude" in the scene, and
-   posts to the mailbox at once. Read the `events` in the ten seconds before
+   posts to the play history at once. Read the `events` in the ten seconds before
    each flag — the last controller event, press, or `[xr-kit]` line is usually
    the story — then ask one question: "at the moment you marked it, what did
    you see happen?" Never remove or rename the gesture; apps must not bind
@@ -412,9 +464,11 @@ They cannot, and the kit is built so you don't need them to. In order:
    the headset alike (the first error, its code, and how many followed). The
    code is `<build>-<line>`: the build number, and the line in
    `dist/<slug>-build<N>.html` (rebuild it with `build.py` if it's gone; the
-   build is deterministic). This holds wherever the page ran — the artifact
-   link, the ClassCloud copy, a headset — because the kit measures the
-   wrapper's line offset at runtime and subtracts it. Only a local
+   build is deterministic). On Vercel the line is counted in the slim page
+   instead (`dist-vercel/page/index.html`), and an error inside the shared
+   library is `<build>-lib` — see `/check-headset`. The kit measures the
+   wrapper's line offset at runtime and subtracts it, so the code is right
+   wherever the page ran. Only a local
    double-clicked `index.html` (never built) reports its own lines.
    `21-lib` = inside a library (build.py stamps the inlined libraries' line ranges
    so A-Frame's one enormous line is never reported as a line number), `21-load` = a file failed to load,
@@ -426,10 +480,10 @@ They cannot, and the kit is built so you don't need them to. In order:
 7. **Headset-only problems** (colour, controllers, performance) that the
    desktop preview cannot see: add `this.log(...)` (in `xr-kit`) or
    `window.KIT.note('log', …)` elsewhere so the *next* run records what you
-   need, republish, ask the user to play until the problem shows and come back
-   to the home screen, then `/check-headset`. Everything the app prints —
+   need, republish, ask the user to play until the problem shows and then
+   leave VR, then `/check-headset`. Everything the app prints —
    `console.log`, `warn`, `error`, thrown errors, flags — is in the diary, and
-   the diary reaches the headset log by itself. Never mention `adb` or a
+   the diary reaches the app's play history by itself. Never mention `adb` or a
    console to the user. For "is it the palette or the pipeline", drop unlit
    `MeshBasicMaterial` swatches of known hex values into the scene: their
    pixels *are* the hex, so any difference is the output path.
@@ -447,7 +501,8 @@ of view that reopens it, so the code is never lost; a new error reopens it.
 The header is always "Oops, something didn't work". The body depends on the
 **route** the diary has to Claude, which the kit works out itself:
 
-- **mailbox** (artifact link, runtime granted): "Don't worry, Claude already has
+- **mailbox** (left over from the removed artifact route; never shows on a
+  Vercel or Pages page): "Don't worry, Claude already has
   the details. You can continue playing, or take the headset off and tell Claude
   what you were doing." Footer: `"code 21-625" – Tell this to Claude only if asked.`
 - **headset** (a standalone headset browser — detected as Android + WebXR +
@@ -455,6 +510,10 @@ The header is always "Oops, something didn't work". The body depends on the
   the ClassVR Wolvic overrides — with the logbook on): "You can continue playing. When
   you're finished, exit to the ClassVR Launcher screen and Claude can collect
   what happened (keep your headset awake)." Same footer.
+  (Kit 0.35 note: that wording dates from the ClassCloud log route. On
+  Vercel the diary reaches the play history anyway, so the card is more
+  cautious than it needs to be — it is harmless and will be reworded when the
+  template is cleaned up; don't change it in one app.)
 - **code** (local file, plain browser — nothing automatic): "Tell Claude: "code
   21-625" and what you were doing when it happened." No footer — the code carries
   the build.
@@ -473,10 +532,16 @@ them — they are how someone else understands the app. Keep them current as
 part of every edit, silently: the person never has to ask, and they are not
 something to report on beyond "the app's notes are updated" if asked.
 
-**No README or changelog yet** (an app made before 0.32): create them on the
-first edit —
+**A copy made on a history page** (`forkedFrom.via: "history page"` in
+`xr-project.json`): it arrives ready to edit. On the first edit, preview it
+before changing anything, and if `aframe.min.js` is missing put in the kit's
+own (`${CLAUDE_PLUGIN_ROOT}/skills/new-xr-app/assets/aframe.min.js`) —
+silently; see `copy-xr-app`, "A folder from the history page".
 
-    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/appdocs.py init "<app>"
+**No README or changelog yet** (an app made before 0.32): create whichever is
+missing on the first edit —
+
+    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/appdocs.py init "<app>"
 
 — which seeds the changelog from the version notes already in
 `xr-project.json`, then rewrite the README's placeholder sections from what
@@ -485,7 +550,7 @@ the app actually does (read `index.html`, `concept`, `KIT_CONTROLS`).
 **`CHANGELOG.md`** follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 For each change the person would notice, add one line under `## [Unreleased]`:
 
-    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/appdocs.py add "<app>" \
+    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/appdocs.py add "<app>" \
         --category Added|Changed|Fixed|Removed --entry "A lap counter above the track."
 
 - One line per change, plain English, what the player sees — "The ball
@@ -540,8 +605,7 @@ Every edit to `index.html` ends the same way, in this order:
    by the skill, without asking, unless the user said to hold; the Pages URL
    shows the change a couple of minutes later. A turn that ends "saved on
    your branch, press Create PR…" has skipped this step;
-   elsewhere the app's artifact is updated in place; an app that lives on
-   Vercel (`vercel.url` in the manifest) is republished with
+   everywhere else the app lives on Vercel and is republished with
    `/publish-to-vercel` — live in seconds, no cache to wait out. Either way the user — and
    anyone they've shared the link with — sees the change by reloading. The
    build number bumps, and it's what confirms they're looking at the new
@@ -551,6 +615,6 @@ Every edit to `index.html` ends the same way, in this order:
    to the folder (in a repo, the commit is the write-back).
 
 The link is the last thing on screen in an edit turn: the Pages URL on its own
-line, the artifact card, or (Vercel) the URL and the QR code. One sentence about what changed, then "reload the
+line, or (Vercel) the URL. One sentence about what changed, then "reload the
 link to see it" (on a branch: "once it's merged"). Never render `preview.png`
 in an edit turn.

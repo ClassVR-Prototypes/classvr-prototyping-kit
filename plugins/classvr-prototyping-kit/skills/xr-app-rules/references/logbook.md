@@ -1,4 +1,11 @@
-# The logbook: how a headset diary reaches Claude
+# The logbook: how a headset diary reached Claude (retired route)
+
+> **Kit 0.35:** the route that read this through ClassCloud (`/check-headset`
+> asking the headset for its log, `headset_diary.py` decoding it) has been
+> removed; `/check-headset` now reads the app's Vercel play history. The
+> beacon code described here is **still in the starter template** (`KIT.logbook`),
+> and the Vercel relay (`kit-relay.js`) reuses its session id — so keep this
+> page until the template clean-up removes or replaces that code.
 
 Facts established 2026-09-07 on a ClassVR headset (Wolvic, Chromium backend,
 Avantis build 1.2.x), kit 0.12. Everything here was measured, not assumed.

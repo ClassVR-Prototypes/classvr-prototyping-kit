@@ -7,17 +7,25 @@ description: >
   this app someone sent me", "copy version 4 of this", or /copy-xr-app
   followed by a published address (optionally with a version number or a
   /v/N/ address). It takes the address of a kit app published on Vercel,
-  GitHub Pages or ClassCloud, rebuilds the app's full source from the
+  or GitHub Pages, rebuilds the app's full source from the
   published page — the current version or any earlier one from the app's
   history — checks its fingerprint, puts it in a new project folder the user
   can edit with ordinary prompts, checks it runs, and offers to publish it as
   their own. Nothing is needed from the person who made the original — no
   files sent, no repository, no account shared.
 metadata:
-  version: "0.4.0"
+  version: "0.6.0"
 ---
 
 # Copy an XR app
+
+There are two ways to get a copy, and this skill is one of them. The other
+needs no chat at all: every Vercel app's history page (`<address>/history`)
+has a **Make my own copy** button next to each version, which builds the same
+folder in the browser and, in one click, saves it where the person chooses
+(Chrome/Edge folder picker) or, in other browsers, as a .zip download. If someone asks how to copy an app themselves, point them there;
+if they connect a folder the button made, see "A folder from the history
+page" below — it is already a copy and needs no steps from this skill.
 
 A published kit app carries everything needed to rebuild its source: the page
 itself is the app minus the kit's plumbing, and the plumbing is a versioned
@@ -49,7 +57,8 @@ folder's `xr-project.json`. Accepted:
 - `https://<name>.vercel.app` — the Vercel route (current version)
 - `https://<name>.vercel.app/v/<N>/` — one particular version of it
 - `https://<owner>.github.io/<repo>/<slug>/` — the Pages route
-- an AVNFS / ClassCloud page address — a single-file build
+- any other address serving a single-file kit build (an older app, from
+  before kit 0.35)
 
 "Version 4 of …", "the one from Tuesday", "the version with the lap counter"
 → the Vercel route with a version. Fetch `<address>/history.json`
@@ -91,7 +100,7 @@ aframe=…; lib=…">`.
 
 - **Present** → a slim page from the Vercel route. Continue at step 4.
 - **Absent, but the page contains `window.KIT = (function`** → a single-file
-  build (ClassCloud, Pages, or an older Vercel publish). The source is already
+  build (Pages, an older Vercel publish, or an app from before kit 0.35). The source is already
   there: skip to step 6 using this file as `index.html` — but first take the
   README and changelog out of it (step 5b). If it inlines
   A-Frame, strip nothing — but note the app folder wants A-Frame as a separate
@@ -119,7 +128,7 @@ instead.
 
     python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/vercel_build.py \
         --unslim "<scratch>/published.html" --lib-dir "<scratch>/lib" \
-        --out "<scratch>/index.html" [--expect-sha1 <sha1 from history.json>]
+        --out "<scratch>/index.html" --as-copy [--expect-sha1 <sha1 from history.json>]
 
 Pass `--expect-sha1` whenever `history.json` gave one (for the current
 version too: its entry is the one numbered `current`). It refuses a page
@@ -141,7 +150,7 @@ Every page published with kit 0.32 or later carries both inside it.
 - **Vercel slim page** → step 5 already wrote them into `<scratch>/`.
 - **Single-file build** (step 3, second case) →
 
-      python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/appdocs.py extract \
+      python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/appdocs.py extract \
           "<scratch>/published.html" --to "<scratch>" --strip-into "<scratch>/index.html"
 
   and use `<scratch>/index.html` as the source in step 6.
@@ -165,7 +174,7 @@ Replace the scaffolded `index.html` with the rebuilt one, keep
 `aframe.min.js`. Replace the scaffolded `README.md` and `CHANGELOG.md` with the
 original's when step 5b found them, then make the changelog the copy's own:
 
-    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/appdocs.py fork "<folder>" \
+    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/appdocs.py fork "<folder>" \
         --url "<address, without /v/N/>" --version <N> --fingerprint <publishedSha1> --name "<original name>"
 
 Its Unreleased section now says which version of which address the copy was
@@ -177,18 +186,18 @@ match; leave the rest of the README as the original wrote it.
 
 Then fix the manifest:
 
-    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-xr-app/scripts/manifest.py \
+    python3 ${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts/manifest.py \
         --project "<folder>" \
-        --set build=0 \
+        --set build=1 \
         --set dof=<3 or 6, read from the page's `<a-scene xr-kit="dof: N">`> \
         --set forkedFrom='{"url":"<address>","version":<N>,"sha1":"<publishedSha1>","lib":"<kit>","at":"<today>"}'
 
 Then **clear the original's identity** so a publish creates the copier's own
-project — `classcloud.activityId`, `classcloud.lastUrl`, `artifact.url`,
-`pages.url`, `vercel.project`, `vercel.projectId`, `vercel.url`,
+project — `pages.url`, `vercel.project`, `vercel.projectId`, `vercel.url`,
 `vercel.deploymentId`, `vercel.store`, `vercel.owner` all to `null`. A
 scaffolded manifest already has them null, so this only matters if a manifest
-was copied rather than scaffolded — check, don't assume.
+was copied rather than scaffolded — check, don't assume. Old `classcloud` or
+`artifact` blocks (kits before 0.35) can simply be removed.
 
 If the page's A-Frame version differs from the bundled one, say so in one line
 (the copy uses the kit's bundled version) and carry on.
@@ -209,11 +218,25 @@ Deliver the folder's files to the user (Cowork: `SendUserFile`
 
 Two sentences: they now have their own copy of `<name>`, they can change it by
 asking ("make the ball bigger", "add a sign"), and it is not published
-anywhere yet. Then ask once where they want it — their Vercel account, a
-ClassCloud QR code for headsets, or nowhere for now — and route to
-`/publish-to-vercel`, `/publish-xr-app` or `/share-xr-app` accordingly. Do not
+anywhere yet. Then ask once whether to put it on their Vercel account (which
+also gives the headset QR code) or leave it unpublished for now — and route
+to `/publish-to-vercel` (or `/share-xr-app` inside a GitHub repository). Do not
 publish without asking: the copy is public the moment it is, and it is not
 their app yet in any other sense.
+
+## A folder from the history page
+
+A folder made by the history page's **Make my own copy** button has the same
+files and the same shape as one this skill makes — the button runs the same
+rebuild in the browser, checked against this skill's output byte for byte —
+with `forkedFrom.via: "history page"` in `xr-project.json`. When someone
+connects one and asks for a change, just carry on (`xr-app-rules`). The first
+time, run the preview check before editing, and if `aframe.min.js` is missing
+(the browser could not reach the site it comes from), put the kit's own copy
+in: `${CLAUDE_PLUGIN_ROOT}/skills/new-xr-app/assets/aframe.min.js`. Don't
+mention either unless the preview fails. The folder's name ends in "copy" (or
+"copy 2", …); if the person wants it called something else, rename the app
+(`name`, `slug`, the page `<title>` and the README title) when they say so.
 
 ## Attribution and licence
 
@@ -233,7 +256,7 @@ is an Avantis question, not a technical one.
 
 - Rebuild a page that is not a kit app, or one whose library has been taken
   down.
-- Reach `github.io` or ClassCloud pages from the cloud workspace — those need
+- Reach `github.io` pages from the cloud workspace — those need
   the browser pane or a paste.
 - Give the copier the original's play history or its playable old versions;
   the copy starts at version 1 (with `copiedFrom` recording which version of

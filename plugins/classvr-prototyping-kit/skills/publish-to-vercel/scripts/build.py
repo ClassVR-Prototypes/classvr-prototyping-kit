@@ -13,9 +13,9 @@ source: a change to either bumps the build. When the build goes up, the
 changelog's Unreleased lines become "## [N] - date", and both files are put
 inside the output page so they travel with it.
 
-Why one file: ClassCloud storage is content-addressed — every URL is a hash,
-there are no directories and no relative paths, so a <script src="./x.js">
-can never resolve there. Every local script is inlined here.
+The single file in dist/ is not uploaded anywhere on the Vercel route; it is
+the deterministic reference copy that error codes' line numbers can be looked
+up in, and what vercel_build.py and preview checks start from.
 
 Prints JSON: {ok, build, bumped, output, bytes}
 """
@@ -92,8 +92,8 @@ def main():
         return '<script><!--KIT-LIB-START-->\n' + js + '\n</script><!--KIT-LIB-END-->'   # markers removed below
     flat = re.sub(r'<script\s+src="\./([^"]+)"\s*>\s*</script>', inline, src)
     # Line anchor. The diary reports error lines in whatever page is running,
-    # and wrappers (the artifact viewer's skeleton, artifact.py's stripping)
-    # shift those numbers. The kit measures its own line at runtime with a probe
+    # and wrappers (an embedding page's skeleton, the slim Vercel page) shift
+    # those numbers. The kit measures its own line at runtime with a probe
     # and subtracts the difference from this stamp, so every code's line is a
     # line of THIS file, wherever the page ran. Stamp the probe's line here.
     lines = flat.split('\n')

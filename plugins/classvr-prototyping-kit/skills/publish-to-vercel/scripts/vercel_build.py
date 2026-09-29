@@ -77,8 +77,10 @@ it expects (https://<project>.vercel.app/) and checks it after the deploy.
 README and changelog (kit 0.32). The app's README.md and CHANGELOG.md go
 inside the page (appdocs.embed), so every version and every copy carries its
 own; the changelog's version headings are linked to /v/<N>/; and the deploy
-set gains README.md, CHANGELOG.md and about/index.html — the readable "About
-this app" page, linked from /history. Without --note, the history note is made
+set gains about/index.html — the readable "About this app" page, linked from
+/history. (The two .md files are not served on their own since 0.34.1: the
+about page shows them, copies take them from inside the page, and Vercel
+leaves a top-level README.md out of the site anyway.) Without --note, the history note is made
 from this version's changelog lines. --unslim puts both files back beside the
 rebuilt index.html (--docs readme|none to keep only the README, or neither —
 "go back to version N" keeps the current changelog).
@@ -107,7 +109,7 @@ instead of carrying it as a literal.
 """
 import argparse, datetime, hashlib, html as htmlmod, json, os, re, shutil, sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'publish-xr-app', 'scripts'))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import appdocs   # README.md + CHANGELOG.md (kit 0.32)
 
 SOURCE_META = 'xr-kit-source'
@@ -235,7 +237,13 @@ def history_viewer():
     https://<project>.vercel.app. It fetches that app's /history.json (public,
     served with Access-Control-Allow-Origin: *) and lists the versions. Each
     app's /history redirects here, so nothing about the history page travels
-    with an app's publish."""
+    with an app's publish.
+
+    Since kit 0.33 every version also has a "Make my own copy" button:
+    assets/kit-copy.js (inlined below) rebuilds that version's source in the
+    browser and saves it as an app folder, or a .zip."""
+    copy_js = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', 'kit-copy.js'),
+                   encoding='utf-8').read().replace('</script', '<\\/script')
     return """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -268,10 +276,13 @@ aside b { color:var(--fg); }
 <ol id="list"></ol>
 <p id="aboutlink" hidden><a id="abouta">About this app</a> — what it is, how to play it and what changed in each version.</p>
 <aside id="about" hidden>
-<b>Want your own copy?</b> Ask Claude: “make me my own copy of <span id="copy"></span>”. You get an independent copy to change however you like; this one is untouched.<br>
+<b>Want your own copy?</b> Press <b>Make my own copy</b> next to any version: you get a folder to add to a Claude Cowork task and change however you like. Or ask Claude: “make me my own copy of <span id="copy"></span>”. Either way this one is untouched.<br>
 <b>Fingerprint</b> is the first eight characters of the page's SHA-1 — two people quoting the same fingerprint are looking at exactly the same version. The full list is at <a id="json">history.json</a>.
 </aside>
 </main>
+<script>
+""" + copy_js + """
+</script>
 <script>
 (function () {
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -295,7 +306,13 @@ aside b { color:var(--fg); }
       var meta = el('div', 'meta'), t = el('time', null, (v.date || '').slice(0, 10)); t.dateTime = v.date || ''; meta.appendChild(t);
       meta.appendChild(document.createTextNode(' · fingerprint ')); var c = el('code', null, (v.sha1 || '').slice(0, 8)); c.title = v.sha1 || ''; meta.appendChild(c);
       meta.appendChild(document.createTextNode(' · ')); var play = el('a', null, 'play'); play.href = app + '/v/' + v.version + '/'; meta.appendChild(play);
-      li.appendChild(meta); list.appendChild(li);
+      li.appendChild(meta);
+      if (window.KitCopy && window.fetch && window.crypto && crypto.subtle) {
+        var cb = el('button', 'kc-btn', 'Make my own copy');
+        cb.addEventListener('click', function () { KitCopy.open(app, doc, v); });
+        li.appendChild(cb);
+      }
+      list.appendChild(li);
     });
     if (doc.about) { var ab = document.getElementById('abouta'); ab.href = app + '/' + doc.about; document.getElementById('aboutlink').hidden = false; }
     document.getElementById('copy').textContent = app + ' version N';
@@ -517,14 +534,11 @@ def build(a):
         if missing_old:
             print('not in the app folder (the page/ folder alone would drop them): version%s %s'
                   % ('' if len(missing_old) == 1 else 's', ', '.join(map(str, missing_old))))
-    # README.md, CHANGELOG.md and the readable about/ page
+    # the readable about/ page (README + changelog)
     if app_docs.get('readme') or app_docs.get('changelog'):
-        for name, text in (('README.md', app_docs.get('readme')), ('CHANGELOG.md', app_docs.get('changelog'))):
-            if text:
-                deploy[name] = text
         deploy['about/index.html'] = appdocs.about_page(manifest.get('name'), app_docs.get('readme'),
                                                         app_docs.get('changelog'), link_url, build_no)
-        for name in ('README.md', 'CHANGELOG.md', 'about/index.html'):
+        for name in ('about/index.html',):
             if name in deploy:
                 dest = os.path.join(out, 'page', name)
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -555,10 +569,6 @@ def build(a):
             vj['redirects'] += [
                 {'source': '/kit-relay.js', 'destination': '%s/%s' % (L, LIB_RELAY % v), 'permanent': False},
                 {'source': '/kit-qr.js', 'destination': '%s/%s' % (L, LIB_QR % v), 'permanent': False}]
-    if 'README.md' in deploy or 'CHANGELOG.md' in deploy:
-        # shown as text in the browser rather than downloaded
-        vj.setdefault('headers', []).append({'source': '/(README|CHANGELOG).md',
-                                             'headers': [{'key': 'Content-Type', 'value': 'text/plain; charset=utf-8'}]})
     if vj:
         text = json.dumps(vj, indent=2) + '\n'
         open(os.path.join(out, 'page', 'vercel.json'), 'w', encoding='utf-8', newline='\n').write(text)
@@ -590,7 +600,7 @@ def build(a):
     # so a file new in this publish cannot be sent by sha — verified 22 Sep);
     # history.json and the history page change too; everything else is
     # byte-identical across publishes and goes by sha after the first time
-    inline_names = {'index.html', HISTORY_JSON, 'vercel.json', 'README.md', 'CHANGELOG.md', 'about/index.html'}
+    inline_names = {'index.html', HISTORY_JSON, 'vercel.json', 'about/index.html'}
     for name in sorted(deploy):
         text = deploy[name]
         s1, n = sha1_bytes(text)
@@ -700,6 +710,10 @@ def unslim(a):
     page = re.sub(r'<script src="https?://[^"]*/([A-Za-z0-9._-]+\.js)"></script>',
                   lambda m2: '<script src="./%s"></script>' % m2.group(1), page)
     page = re.sub(r'<!-- Vercel build:[^>]*-->', BUNDLED_COMMENT, page, count=1)
+    if a.as_copy:
+        # a copy is a new app: its first publish is version 1 (the history
+        # page's "Make my own copy" button does the same)
+        page = re.sub(r'window\.BUILD\s*=\s*\d+\s*;', 'window.BUILD = 1;', page, count=1)
 
     open(a.out, 'w', encoding='utf-8', newline='\n').write(page)
     title = re.search(r'<title>([^<]*)</title>', page)
@@ -730,6 +744,8 @@ def main():
     ap.add_argument('--lib-dir', default=None, help='with --unslim: folder holding the xr-kit-*.js/.css files the page names')
     ap.add_argument('--expect-sha1', default=None, metavar='HEX',
                     help='with --unslim: the fingerprint history.json gives for this version; stop if the fetched page does not match it')
+    ap.add_argument('--as-copy', action='store_true',
+                    help="with --unslim: the result is someone's own copy — start its build number at 1")
     ap.add_argument('--docs', choices=['both', 'readme', 'none'], default='both',
                     help="with --unslim: which of the page's README.md / CHANGELOG.md to write beside --out "
                          "(readme when going back to an old version: the current changelog stays)")

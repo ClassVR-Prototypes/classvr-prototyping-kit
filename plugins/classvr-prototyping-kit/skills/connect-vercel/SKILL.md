@@ -118,9 +118,9 @@ the tab reloads the page and clears it.
 
 ### 4. Record the non-secret details
 
-Add to the kit's settings file `<connected folder>/.classvr-kit.json` (the
-same file that remembers the ClassCloud organisation; create it if missing,
-keep the other keys) with a short read-modify-write on the person's computer:
+Add to the kit's settings file `<connected folder>/.classvr-kit.json` (create it if
+missing, keep the other keys — older kits kept a ClassCloud organisation
+there, which can stay) with a short read-modify-write on the person's computer:
 
     "vercel": { "username": "<username>", "teamId": "<team_…>",
                 "via": "token", "connectedAt": "<ISO date>" }

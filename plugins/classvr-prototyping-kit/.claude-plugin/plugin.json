@@ -1,7 +1,7 @@
 {
   "name": "classvr-prototyping-kit",
-  "version": "0.32.0",
-  "description": "Build WebXR prototypes for ClassVR headsets without touching a terminal: create a working scene, share it on a permanent link (GitHub Pages, Vercel — with your own token, no connector — or a Claude Artifact), copy someone else's prototype from its address, and publish to ClassCloud as a scannable QR code.",
+  "version": "0.35.0",
+  "description": "Build WebXR prototypes for ClassVR headsets without touching a terminal: create a working scene, publish it to a permanent Vercel link with your own token (or GitHub Pages inside a repository) that opens on a headset from its own QR code, keep every version, read back what happened on the headset, and copy someone else's prototype from its address.",
   "author": {
     "name": "Avantis — Project Ptah"
   },
@@ -11,7 +11,7 @@
     "a-frame",
     "vr",
     "prototype",
-    "eduverse"
+    "vercel"
   ],
   "hooks": "./hooks/hooks.json"
 }
