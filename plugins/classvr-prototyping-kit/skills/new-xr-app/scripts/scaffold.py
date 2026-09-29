@@ -101,13 +101,7 @@ def main():
         'created': datetime.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z',
         'build': 1,
         'sourceHash': None,
-        'libraries': ['aframe'],
-        'pages': {
-            'url': None,
-            'repo': None,
-            'build': None,
-            'lastShared': None
-        }
+        'libraries': ['aframe']
     }
     open(os.path.join(dest, 'xr-project.json'), 'w', encoding='utf-8').write(
         json.dumps(manifest, indent=2) + '\n')

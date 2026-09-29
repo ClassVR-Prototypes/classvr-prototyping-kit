@@ -7,14 +7,14 @@ description: >
   this app someone sent me", "copy version 4 of this", or /copy-xr-app
   followed by a published address (optionally with a version number or a
   /v/N/ address). It takes the address of a kit app published on Vercel,
-  or GitHub Pages, rebuilds the app's full source from the
+  rebuilds the app's full source from the
   published page — the current version or any earlier one from the app's
   history — checks its fingerprint, puts it in a new project folder the user
   can edit with ordinary prompts, checks it runs, and offers to publish it as
   their own. Nothing is needed from the person who made the original — no
-  files sent, no repository, no account shared.
+  files sent, no account shared.
 metadata:
-  version: "0.6.0"
+  version: "0.7.0"
 ---
 
 # Copy an XR app
@@ -56,9 +56,7 @@ folder's `xr-project.json`. Accepted:
 
 - `https://<name>.vercel.app` — the Vercel route (current version)
 - `https://<name>.vercel.app/v/<N>/` — one particular version of it
-- `https://<owner>.github.io/<repo>/<slug>/` — the Pages route
-- any other address serving a single-file kit build (an older app, from
-  before kit 0.35)
+- any other address serving a single-file kit build (an older app)
 
 "Version 4 of …", "the one from Tuesday", "the version with the lap counter"
 → the Vercel route with a version. Fetch `<address>/history.json`
@@ -87,9 +85,9 @@ it in the browser pane.
 
 - **`*.vercel.app`** → `web_fetch_vercel_url` (the cloud workspace cannot
   reach Vercel directly).
-- **anything else** → `WebFetch`, or `curl` from the workspace. `github.io` is
-  not reachable from the cloud workspace either; use the browser pane on the
-  user's machine (`get_page_text`) or ask them to paste the page.
+- **anything else** → `WebFetch`, or `curl` from the workspace; if the
+  workspace can't reach it, use the browser pane on the user's machine
+  (`get_page_text`) or ask them to paste the page.
 
 Save it as `<scratch>/published.html`.
 
@@ -100,7 +98,7 @@ aframe=…; lib=…">`.
 
 - **Present** → a slim page from the Vercel route. Continue at step 4.
 - **Absent, but the page contains `window.KIT = (function`** → a single-file
-  build (Pages, an older Vercel publish, or an app from before kit 0.35). The source is already
+  build (an older Vercel publish, or an older app). The source is already
   there: skip to step 6 using this file as `index.html` — but first take the
   README and changelog out of it (step 5b). If it inlines
   A-Frame, strip nothing — but note the app folder wants A-Frame as a separate
@@ -154,8 +152,6 @@ Every page published with kit 0.32 or later carries both inside it.
           "<scratch>/published.html" --to "<scratch>" --strip-into "<scratch>/index.html"
 
   and use `<scratch>/index.html` as the source in step 6.
-- **Pages address** and nothing embedded → fetch `<address>/README.md` and
-  `<address>/CHANGELOG.md` the same way as the page (either may 404).
 - **Neither** (published before 0.32) → nothing to copy; step 6 creates fresh
   ones and you rewrite the README from what the app does.
 
@@ -193,11 +189,12 @@ Then fix the manifest:
         --set forkedFrom='{"url":"<address>","version":<N>,"sha1":"<publishedSha1>","lib":"<kit>","at":"<today>"}'
 
 Then **clear the original's identity** so a publish creates the copier's own
-project — `pages.url`, `vercel.project`, `vercel.projectId`, `vercel.url`,
+project — `vercel.project`, `vercel.projectId`, `vercel.url`,
 `vercel.deploymentId`, `vercel.store`, `vercel.owner` all to `null`. A
 scaffolded manifest already has them null, so this only matters if a manifest
-was copied rather than scaffolded — check, don't assume. Old `classcloud` or
-`artifact` blocks (kits before 0.35) can simply be removed.
+was copied rather than scaffolded — check, don't assume. Any other hosting
+blocks an older manifest carries (anything but `vercel`) can simply be
+removed.
 
 If the page's A-Frame version differs from the bundled one, say so in one line
 (the copy uses the kit's bundled version) and carry on.
@@ -220,7 +217,7 @@ Two sentences: they now have their own copy of `<name>`, they can change it by
 asking ("make the ball bigger", "add a sign"), and it is not published
 anywhere yet. Then ask once whether to put it on their Vercel account (which
 also gives the headset QR code) or leave it unpublished for now — and route
-to `/publish-to-vercel` (or `/share-xr-app` inside a GitHub repository). Do not
+to `/publish-to-vercel`. Do not
 publish without asking: the copy is public the moment it is, and it is not
 their app yet in any other sense.
 
@@ -256,8 +253,6 @@ is an Avantis question, not a technical one.
 
 - Rebuild a page that is not a kit app, or one whose library has been taken
   down.
-- Reach `github.io` pages from the cloud workspace — those need
-  the browser pane or a paste.
 - Give the copier the original's play history or its playable old versions;
   the copy starts at version 1 (with `copiedFrom` recording which version of
   the original it began as). The original's changelog does come across, as

@@ -5,10 +5,9 @@ description: >
   works", "show me what it looks like", "test the VR app", "does it still run", or
   invokes /preview-xr-app. It loads the app in a headless browser, confirms it
   starts cleanly, and returns a screenshot plus a plain-English health check. Also
-  run automatically by /publish-to-vercel and /share-xr-app before anything is
-  published.
+  run automatically by /publish-to-vercel before anything is published.
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
 ---
 
 # Preview XR app
@@ -60,8 +59,7 @@ loading.
 
 4. **Report in plain language.** Send `preview.png` with `display: "render"` so it
    opens in the side panel — but only when previewing is the point of the turn.
-   If this check is running inside a publish (`/publish-to-vercel`,
-   `/share-xr-app`), send nothing: the link is what ends that turn, and a
+   If this check is running inside `/publish-to-vercel`, send nothing: the link is what ends that turn, and a
    screenshot sent after it would push the link off the screen. Then one or two sentences:
 
    - Pass: "Loads cleanly — A-Frame 1.7.1, build 4, no errors." Mention anything

@@ -11,7 +11,7 @@ description: >
   an app working on a ClassVR headset, so ordinary prompts don't reintroduce known
   failures, plus ready recipes such as passthrough (AR) and the microphone.
 metadata:
-  version: "0.11.0"
+  version: "0.12.0"
 ---
 
 # Rules for editing a kit XR app
@@ -115,7 +115,7 @@ checks, controls. Diagnostics for *you* go to the console (see below).
 worked out from the textbook formulas instead (a block sliding down a ramp, a
 projectile's arc): that is exact, easy to self-check, and needs no library —
 which matters, because **the Vercel route cannot host `cannon.iife.js` yet**,
-so an app that uses it cannot be published outside a GitHub repository. Only
+so an app that uses it cannot be published (or reach a headset) yet. Only
 when real collisions are needed (stacking, bouncing off each other, throwing
 into a pile), use the bundled `cannon-es` — and say in one line, before
 building it, that this app won't go on the Vercel link yet: copy
@@ -328,8 +328,8 @@ granted keeps working, including after Enter VR. So:
    browser has no microphone, so don't expect `ready`). For push-to-talk,
    check that a press with the mic not ready leaves a visible "not ready"
    message and doesn't call `getUserMedia` again while one is pending.
-6. **Hosting:** the mic needs a top-level secure page. Vercel and GitHub
-   Pages links work; a page embedded in another site's frame generally
+6. **Hosting:** the mic needs a top-level secure page. The app's Vercel
+   link works; a page embedded in another site's frame generally
    doesn't. The desktop preview and
    Claude's built-in browser also have no microphone, so real results come
    only from a headset or a person's own browser; read them back with
@@ -360,7 +360,7 @@ If someone embeds a kit app inside another page's frame (an LMS, a slide
 tool), the frame usually blocks WebXR: A-Frame shows no VR button and the
 panel says "blocked inside a frame". That is the embedding page's rule, not a
 bug in the app, and cannot be fixed from inside it. Headsets open the
-published Vercel (or Pages) link from its QR code. Don't add workarounds.
+published Vercel link from its QR code. Don't add workarounds.
 
 ## Desktop mouse: right-drag looks, left-click is the trigger
 
@@ -444,7 +444,7 @@ They cannot, and the kit is built so you don't need them to. In order:
    same fields. If a report matches what the user describes (same build, an
    `errorList`, the `events` before it), you have the whole story — say what
    you found in one plain sentence, then fix. Only fall back to asking for
-   the code when there is no history (a GitHub Pages app, a local
+   the code when there is no history (an app not yet published, a local
    double-clicked file, or a page that never loaded).
 5. **Look for flags.** Bugs that never throw — the ball falls through the
    floor, nothing happens on a press — leave no code. For those the player
@@ -501,19 +501,18 @@ of view that reopens it, so the code is never lost; a new error reopens it.
 The header is always "Oops, something didn't work". The body depends on the
 **route** the diary has to Claude, which the kit works out itself:
 
-- **mailbox** (left over from the removed artifact route; never shows on a
-  Vercel or Pages page): "Don't worry, Claude already has
-  the details. You can continue playing, or take the headset off and tell Claude
-  what you were doing." Footer: `"code 21-625" – Tell this to Claude only if asked.`
+- **mailbox** (a legacy case in the template; never shows on a Vercel page):
+  "Don't worry, Claude already has the details. You can continue playing, or
+  take the headset off and tell Claude what you were doing." Footer:
+  `"code 21-625" – Tell this to Claude only if asked.`
 - **headset** (a standalone headset browser — detected as Android + WebXR +
   immersive-vr supported, or a session running; never by the UA string, which
   the ClassVR Wolvic overrides — with the logbook on): "You can continue playing. When
   you're finished, exit to the ClassVR Launcher screen and Claude can collect
   what happened (keep your headset awake)." Same footer.
-  (Kit 0.35 note: that wording dates from the ClassCloud log route. On
-  Vercel the diary reaches the play history anyway, so the card is more
-  cautious than it needs to be — it is harmless and will be reworded when the
-  template is cleaned up; don't change it in one app.)
+  (The diary reaches the app's Vercel play history anyway, so this card is
+  more cautious than it needs to be. It is harmless and will be reworded in
+  the template; don't change it in one app.)
 - **code** (local file, plain browser — nothing automatic): "Tell Claude: "code
   21-625" and what you were doing when it happened." No footer — the code carries
   the build.
@@ -599,22 +598,16 @@ Every edit to `index.html` ends the same way, in this order:
    non-technical user cannot diagnose from a blank headset. A failing check
    means the edit isn't finished; read `checks` and `diary` in
    `preview.json` and fix the first problem first.
-2. **Refresh the link** (`/share-xr-app`). In a GitHub repository that means
-   well-named commits (one per logical change) and a push, **then publishing
-   with the kit's `publish_pr.py`** — the pull request is opened and merged
-   by the skill, without asking, unless the user said to hold; the Pages URL
-   shows the change a couple of minutes later. A turn that ends "saved on
-   your branch, press Create PR…" has skipped this step;
-   everywhere else the app lives on Vercel and is republished with
-   `/publish-to-vercel` — live in seconds, no cache to wait out. Either way the user — and
+2. **Refresh the link** (`/publish-to-vercel`) — without asking; publishing
+   is part of the edit. It is live in seconds, no cache to wait out. The user — and
    anyone they've shared the link with — sees the change by reloading. The
    build number bumps, and it's what confirms they're looking at the new
    version. If the manifest has no link yet (an app made before links
    existed), this creates one.
 3. Write `index.html`, `xr-project.json`, `README.md` and `CHANGELOG.md` back
-   to the folder (in a repo, the commit is the write-back).
+   to the folder.
 
-The link is the last thing on screen in an edit turn: the Pages URL on its own
-line, or (Vercel) the URL. One sentence about what changed, then "reload the
-link to see it" (on a branch: "once it's merged"). Never render `preview.png`
+The link is the last thing on screen in an edit turn: the Vercel URL on its
+own line. One sentence about what changed, then "reload the link to see it".
+Never render `preview.png`
 in an edit turn.

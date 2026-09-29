@@ -10,14 +10,13 @@ description: >
   builds a minimal playable version of the chosen one. No terminal, no libraries to
   install.
 metadata:
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # New XR app
 
 Create a working WebXR project folder from the kit template, then put it on a
-permanent link (`/share-xr-app`, which is Vercel for any folder outside a
-GitHub repository). The result opens in any desktop browser the moment the
+permanent Vercel link (`/publish-to-vercel`). The result opens in any desktop browser the moment the
 turn ends, and the same link opens on a headset from the QR code the page
 shows. The user should never have to run anything or open a file.
 
@@ -188,20 +187,9 @@ from the start position. If they aren't, move them, don't ship it.
 
 ### 7. Put it on a link
 
-Run `/share-xr-app` from its step 1 (route choice) — the build and preview
-check are already done, so skip its steps 2–3. Where the app lives decides the
-kind of link:
-
-- **A plain folder** (Cowork with a connected folder, no repo), or the request
-  **named Vercel** ("make X, hosted on Vercel"): **route C, Vercel** — the
-  normal case. Deliver the project files to the user's folder, then run
-  `/publish-to-vercel` from its step 3 (it runs `/connect-vercel` first if the
-  person has no Vercel connection yet). Make no Pages commit for it.
-- **Inside a GitHub repository** (Claude Code, a cloned repo) and Vercel not
-  named: **route A, GitHub Pages.** Commit the new folder, push, and the app
-  gets a public URL like `https://<owner>.github.io/<repo>/<slug>/`. If the
-  repo has never published before, the share skill adds the workflow and tells
-  the user the one-time Pages setting.
+Deliver the project files to the user's folder, then run `/publish-to-vercel`
+from its step 3 — the preview check is already done. It runs `/connect-vercel`
+first if the person has no Vercel connection yet.
 
 Every app leaves this skill with a link recorded in `xr-project.json`.
 
@@ -211,21 +199,16 @@ One or two sentences: the folder name; if a concept was built, what the game
 does in one line and how to play it (click to look, W/A/S/D to move, Q/E to
 turn; on a headset, **Enter VR**); then how to get it on a headset — "the
 page has a QR code in its top-right corner — click it to enlarge, then point
-the headset's scanner at it". Do not explain libraries, manifests, git, or
+the headset's scanner at it". Do not explain libraries, manifests or
 build numbers unless asked.
 
 **What appears on screen.**
 
-- Route A: **the URL is the last line of the reply, on its own line**, so the
-  user can click it and open the app straight away. Say when it will work:
-  "live in a couple of minutes" (the share skill ran `publish_pr.py` and the
-  pull request is already merged — never offer to do this, do it); only if
-  both hands-free routes failed, "once you press Create PR and Merge". A brand-new repo also needs the one-time
-  Pages setting — say so if the share skill just added the workflows.
-- Route C: **the Vercel URL is the last line of the reply, on its own line** —
-  it is live at once. No QR image: the page shows its own.
+**The Vercel URL is the last line of the reply, on its own line**, so the user
+can click it and open the app straight away — it is live at once. No QR image:
+the page shows its own.
 
-Do **not** render `preview.png` in either case — a screenshot would only push
+Do **not** render `preview.png` — a screenshot would only push
 the link away. Project files are attached, not rendered.
 
 "Make X and put it on the headset" is the same flow: the link from step 7 is
@@ -237,9 +220,9 @@ unless asked for one to print.
 After scaffolding, ordinary prompts ("add a red table on the left", "make the sky
 darker", "make the balls bigger") are edits to `index.html`. Apply the
 `xr-app-rules` skill: it holds the constraints that keep the app working on a
-headset (single-file publishing, no CDN, canvas-drawn text, physics timestep,
+headset (no CDN, canvas-drawn text, physics timestep,
 controller ray direction, head pose in VR, and more) and ends every edit with
-`/share-xr-app`, so the link always shows the latest build.
+`/publish-to-vercel`, so the link always shows the latest version.
 
 ### Retargeting ("make it 3DoF" / "make it 6DoF")
 

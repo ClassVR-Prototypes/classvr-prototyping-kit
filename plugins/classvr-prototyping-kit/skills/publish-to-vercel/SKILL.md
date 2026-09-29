@@ -1,22 +1,22 @@
 ---
 name: publish-to-vercel
 description: >
-  This skill should be used when the user asks to "host it on Vercel", "put my XR
-  app on Vercel", "publish to Vercel", "refresh the Vercel page", "publish my XR
-  app", "put it on the headset", "send it to the headsets", "give me the QR
-  code", invokes /publish-to-vercel, or creates a new XR app naming Vercel as its
-  home ("make a VR app called X, hosted on Vercel"). It is route C of
-  /share-xr-app — the default for every app outside a GitHub repository — and is
-  then used after every edit. It builds a slim page that loads the kit's
+  This skill should be used when the user asks to "publish my XR app", "put it
+  on the headset", "send it to the headsets", "give me the QR code", "share my
+  XR app", "give me a link to the app", "refresh the link", "make the link show
+  the latest version", "host it on Vercel", "publish to Vercel", "refresh the
+  Vercel page", or invokes /publish-to-vercel. It is how every kit app is
+  published: run at the end of /new-xr-app and after every edit to an app, so
+  the link is never behind the folder. It builds a slim page that loads the kit's
   plumbing from a shared library, deploys it with the person's own Vercel token
-  (or the connector) — no Git, no terminal — verifies it live at a stable public URL and ends with that
+  (or the connector) — no terminal — verifies it live at a stable public URL and ends with that
   link (the page draws its own headset QR code) and keeps the app's play
   history for "what went wrong on the headset?". Every
   publish is a saved version: also use for "show me the versions", "what
   changed in version 4", "go back to version 4", "put the old version back",
   "call this version …" and "what's the fingerprint of this version".
 metadata:
-  version: "0.11.0"
+  version: "0.12.0"
 ---
 
 # Publish to Vercel
@@ -44,13 +44,10 @@ so a fifty-version app costs the same to publish as a two-version one. The
 words to use with the person are **save, version, history, go back, make my
 own copy, fingerprint** — never commit, deploy, rollback, hash or SHA.
 
-This is **the kit's default route**: every app that does not live in a GitHub
-repository is published here (`/share-xr-app` route C), and it is how an app
-gets onto a headset — the page's own QR code. The only other route is GitHub
-Pages (`/share-xr-app` route A), which shares the same build numbers. The
-Claude Artifact link and the ClassCloud upload were removed in kit 0.35; an
-app whose manifest still has `classcloud` or `artifact` fields just ignores
-them, and its first publish here gives it a new address.
+This is **the only way a kit app is published**, and it is how an app gets
+onto a headset: the page's own QR code. An app with no `vercel.url` yet gets
+its project on its first publish. Any other fields an older `xr-project.json`
+carries are ignored.
 
 ## Outcome
 
@@ -123,9 +120,9 @@ the token route reads the same public address in that second tab
 
 ### 0. If the app does not exist yet
 
-The request created it *and* chose Vercel ("make a VR app called Bubble Pop,
-host it on Vercel"). `/new-xr-app` runs its steps 1–6 as written and hands
-over here at its step 7 (route C) with the project files already delivered.
+The request created the app ("make a VR app called Bubble Pop"). `/new-xr-app`
+runs its steps 1–6 as written and hands over here at its step 7 with the
+project files already delivered and the preview already passed.
 Continue from step 1. Never ask a question `/new-xr-app` would not ask.
 
 ### 1. Locate and stage the project
@@ -133,8 +130,7 @@ Continue from step 1. Never ask a question `/new-xr-app` would not ask.
 The folder with `index.html` and `xr-project.json`. In a Cowork session stage
 `index.html`, `xr-project.json`, `README.md`, `CHANGELOG.md`, `aframe.min.js`
 (the build reads the A-Frame version from it) and every other local
-`<script src="./…">` into a workspace folder with the same layout; scripts take that folder as the project. In a
-local or Claude Code session use the folder directly.
+`<script src="./…">` into a workspace folder with the same layout; scripts take that folder as the project.
 
 ### 2. Verify the source — do not skip
 
@@ -188,8 +184,8 @@ is served at `classvr-token-test-scene-lukemosele.vercel.app` — so never
 assume `<name>.vercel.app`; use what it returns. Record `vercel.projectId`
 from it too. Later publishes leave `--url` out — the build reads `vercel.url`.
 
-Build into a scratch directory, not the app folder (nothing here belongs in a
-repo). It writes the **deploy set** under `page/` — `index.html` (the slim
+Build into a scratch directory, not the app folder (nothing here belongs in
+the person's folder). It writes the **deploy set** under `page/` — `index.html` (the slim
 page — since kit 0.29 its permanent address `/v/<N>/` is a rewrite to it in
 `vercel.json`, so it is stored once), `history.json`, `api/log.js`, `api/reports.js`, `package.json` and
 `vercel.json` (the noindex header, the `/history` redirect to the library's
@@ -238,9 +234,8 @@ the default.
 If `extraLibs` is not empty (the app bundles `cannon.iife.js` or another
 library), that file must also be served from `libBase`. Check with
 `web_fetch_vercel_url` `<libBase>/<name>`; if it is not there, **stop** and
-say: this app uses an extra library the Vercel route doesn't host yet — use
-the Pages link for it if the app is in a GitHub repository; otherwise say it
-can't be put on a headset yet. Do not push a large library
+say: this app uses an extra library that can't be published yet, so it can't
+be put on a headset for now. Do not push a large library
 through the deploy tool.
 
 ### 5. Make sure the library is hosted
@@ -442,7 +437,7 @@ entry), the two new files under `versions/` (the build printed their path),
 `CHANGELOG.md` (the version's section and link lines), `README.md` if it was
 edited, and `index.html` if `bumped`
 back to the user's folder (Cowork: `SendUserFile` `display: "attach"`, then
-`device_commit_files`; in a repo, commit them as any other edit). Nothing is
+`device_commit_files`). Nothing is
 rendered: **the URL is the last line of the reply, on its own line**, so the
 person can click it straight away.
 
@@ -596,12 +591,11 @@ from the build, or rebuild it); an error inside the shared library is coded
 
 ## When this runs on its own
 
-- **After any edit to `index.html`** of an app whose manifest has
-  `vercel.url`: `/share-xr-app` step 1 routes here, so the Vercel page never
-  lags the folder. Source unchanged (not bumped) → nothing to publish; say so
+- **After any edit to an app** (`xr-app-rules` ends every edit here), so the
+  Vercel page never lags the folder. Source unchanged (not bumped) → nothing to publish; say so
   only if the user expected a change.
-- **Combined create-and-host** ("make X, host it on Vercel"): `/new-xr-app`
-  1–6, then this skill 1–9 in one turn; the link is the last line.
+- **End of `/new-xr-app`**: `/new-xr-app` 1–6, then this skill 1–9 in one
+  turn; the link is the last line.
 
 ## Known limits
 
@@ -612,7 +606,7 @@ from the build, or rebuild it); an error inside the shared library is coded
   their bytes are kept exactly as published.
 - On a narrow window (under 700 px wide or 520 px tall) the card shrinks to a
   96 px code that is too small to scan off a screen; click it to fill the
-  screen first. Same as the Pages card.
+  screen first.
 - Vercel's free Hobby plan is for non-commercial personal use (100 deploys a
   day); staff use belongs on a Pro team. Runtime logs last an hour there (a
   day on Pro); the Blob history is what covers anything older, within Hobby's

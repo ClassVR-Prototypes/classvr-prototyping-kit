@@ -13,7 +13,6 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--project', required=True)
     ap.add_argument('--set', action='append', default=[], metavar='KEY=VALUE')
-    ap.add_argument('--touch-pages', action='store_true', help='set pages.lastShared to now')
     a = ap.parse_args()
     path = os.path.join(os.path.abspath(a.project), 'xr-project.json')
     if not os.path.exists(path):
@@ -29,11 +28,7 @@ def main():
         for p in parts[:-1]:
             node = node.setdefault(p, {})
         node[parts[-1]] = val
-    if a.touch_pages:
-        man.setdefault('pages', {})['lastShared'] = \
-            datetime.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z'
-
-    if a.set or a.touch_pages:
+    if a.set:
         json.dump(man, open(path, 'w', encoding='utf-8'), indent=2); open(path, 'a').write('\n')
     print(json.dumps(man, indent=2))
     return 0

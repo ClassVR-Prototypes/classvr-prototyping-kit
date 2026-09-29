@@ -59,7 +59,7 @@ real headset, kit build 24) — the `VRB[UriOverride]: user agent override`
 log line is a per-domain lookup, not a hit. Never detect the headset by UA;
 the kit uses Android + WebXR + `immersive-vr` supported.
 
-**How a kit app is launched.** The ClassCloud activity URL arrives as an
+**How a page is launched.** A URL opened on the headset arrives as an
 Android intent. The fork starts in **immersive/kiosk mode by default**
 (`mLaunchImmersive = true`): the page opens in a single 2D window with no
 browser chrome — default preset 900 × 600, device scale factor 2.0, curved
@@ -125,9 +125,8 @@ headset's Back/home you leave Wolvic and the `end` beacon may not be written
 **What reaches the Android log.** `Session.onLoadRequest` does
 `Log.d("VRB[Session]", "onLoadRequest: " + uri)` for every main-frame
 navigation, including same-document `replaceState`/hash changes, and the
-release build is not minified — this is the logbook channel
-(`logbook.md` beside this file; retired as a read route in kit 0.35). Web console output is **not**
-forwarded to the log.
+release build is not minified. Web console output is **not** forwarded to
+the log — which is why the kit's diary carries it to Vercel instead.
 
 **Passthrough.** The fork carries upstream Wolvic's WebXR AR module
 (commit 31b452ac4, Aug 2024, "[OpenXR] Add basic support for WebXR AR
@@ -160,9 +159,6 @@ own menu has "Toggle passthrough" (available in kiosk mode too).
 
 - Controllers report as `meta-touch`; VR enter/exit, flags and 72 fps all
   read back through the logbook (Logbook Test build 2, 8 Sep 2026).
-- The device checks in with ClassCloud about every 10 min while awake and
-  never while asleep (this set the latency of the old ClassCloud log route;
-  since kit 0.35 `/check-headset` reads the app's Vercel history instead).
 - **3DoF is simulated.** The device is 6DoF; a kit app with `dof: 3` throws
   positional tracking away itself. The real ClassVR 3DoF headsets do not run
   Wolvic, so this is the only device kit apps are tested on.
@@ -171,9 +167,7 @@ own menu has "Toggle passthrough" (available in kiosk mode too).
 
 Battery life, weight, IPD adjustment range, the cameras themselves (passthrough works — see above), audio
 (speakers, jack), whether a microphone ask made at page load with no tap first shows its prompt, the tracking volume, the exact runtime-advertised refresh
-rate list (72 is inferred from the measured fps and the selection rule), and
-and (no longer needed by the kit) whether ClassCloud preserves the
-`wolvic-launchimmersive-…` query parameter on a URL activity.
+rate list (72 is inferred from the measured fps and the selection rule).
 
 ## What follows for a kit app
 

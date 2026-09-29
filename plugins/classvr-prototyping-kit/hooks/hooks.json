@@ -1,5 +1,5 @@
 {
-  "description": "ClassVR Prototyping Kit: every session starts with the kit's plain-English voice, and a turn in a kit repository may not end with unpublished work.",
+  "description": "ClassVR Prototyping Kit: every session starts with the kit's plain-English voice.",
   "hooks": {
     "SessionStart": [
       {
@@ -8,17 +8,6 @@
             "type": "command",
             "command": "cat \"${CLAUDE_PLUGIN_ROOT}/hooks/voice.md\"",
             "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/stop_publish_check.py\"",
-            "timeout": 90
           }
         ]
       }

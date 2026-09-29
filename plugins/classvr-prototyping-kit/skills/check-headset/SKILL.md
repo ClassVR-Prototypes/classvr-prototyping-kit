@@ -2,7 +2,7 @@
 name: check-headset
 description: This skill should be used when the user asks to "check the headset", "what happened on the headset", "read the headset log", "did it work in VR", "why did it break in the headset", "get the logs from the headset", "check what went wrong when I played it", "did anyone have problems", or invokes /check-headset. After someone has played a kit app from its Vercel link — on a ClassVR headset or in a browser — it reads the app's own play history on Vercel (errors with codes, warnings, everything the app printed, flags the player marked, VR entered or not, frame rate) and explains in plain words what happened — no cables, no developer settings, nothing typed by the player.
 metadata:
-  version: "0.4.0"
+  version: "0.5.0"
 ---
 
 # Check headset
@@ -28,8 +28,7 @@ before each flag. Then — if something broke — the fix, exactly as
 Find the project folder (`xr-project.json`). It needs `vercel.url`. If there
 is none, the app has never been published on Vercel, so there is nothing to
 read — say so in one line and offer to publish it (`/publish-to-vercel`);
-sessions played after that will be there. A GitHub Pages app keeps no
-history either; the error code on its panel is the only trace.
+sessions played after that will be there.
 
 ### 2. Read the history
 
@@ -98,6 +97,6 @@ publish, and "when you've played the new version, ask me to check again".
 - **`{"ok":false,"reason":"no history store…"}`**: the app was published
   before play history existed, or the store was never connected — offer to
   add it (`/publish-to-vercel` step 6b, then a republish).
-- **Sessions only from browsers**: the headset never opened the Vercel link
-  — it may still be using an old ClassCloud or artifact copy from before kit
-  0.35, which reports nothing. Point it at the page's QR code.
+- **Sessions only from browsers**: the headset never opened this Vercel
+  link — it may have opened an old copy from somewhere else, which reports
+  nothing. Point it at the page's QR code.
