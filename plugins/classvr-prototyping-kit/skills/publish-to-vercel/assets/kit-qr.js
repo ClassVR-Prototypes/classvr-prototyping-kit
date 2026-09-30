@@ -1,7 +1,7 @@
 /* kit-qr - the Vercel route's on-page QR code.
    Loaded by every slim page the Vercel build makes. It draws a QR code of the
-   page's own public address in the top-right corner, the same card the GitHub
-   Pages builder adds, so a headset can scan the page straight off a screen.
+   page's own public address in the top-right corner, so a headset can scan
+   the page straight off a screen.
 
    Nothing about the address is baked into this file: the page carries one
    line, <meta name="xr-kit-qr" content="url=https://<app>.vercel.app/">, and
@@ -14,9 +14,8 @@
        scanning a version opens that exact version.
    Entering VR hides it (the headset never shows it); leaving VR brings it
    back. Click to fill the screen for scanning; click, Esc or the cross to
-   shrink it again. The encoder is a line-for-line port of the one in
-   share-xr-app/assets/pages/build_pages.py (byte mode, level M, versions
-   1-40, all eight masks scored) and produces the same modules bit for bit. */
+   shrink it again. The encoder is self-contained (byte mode, level M,
+   versions 1-40, all eight masks scored). */
 (function (root) {
   'use strict';
 
@@ -310,7 +309,7 @@
     '#kit-qr:not(.big) svg{width:96px;height:96px}#kit-qr:not(.big) .t{display:none}}';
 
   function show() {
-    if (document.getElementById('kit-qr')) return;       // a Pages copy already has one
+    if (document.getElementById('kit-qr')) return;       // already drawn
     var where = address();
     if (!where) return;
     var svg;

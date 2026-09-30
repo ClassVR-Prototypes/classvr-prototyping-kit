@@ -7,6 +7,12 @@ Retarget an existing app (3DoF <-> 6DoF) without re-creating it:
 
     python3 scaffold.py --retarget /path/to/App/index.html --dof 3
 
+Bring an existing app's kit plumbing (the diary, the panel's style, the xr-kit
+component, the status panel) up to the current template, leaving everything
+the app itself added untouched:
+
+    python3 scaffold.py --refresh-kit /path/to/App/index.html
+
 Writes <out>/<Name>/ containing:
     index.html        the app (two-file form, edit this)
     aframe.min.js     bundled A-Frame — never loaded from a CDN
@@ -44,6 +50,49 @@ def apply_dof(html, dof):
             html = html.replace(other, HEADSET_CONTROLS[dof], 1)
     return html
 
+# The four kit-owned blocks, found by the same markers vercel_build.py uses.
+KIT_BLOCKS = [('diary', 'script', 'window.KIT = (function'), ('style', 'style', '#kit-panel'),
+              ('xr-kit', 'script', "AFRAME.registerComponent('xr-kit'"), ('panel', 'script', 'Status panel')]
+
+def find_blocks(html):
+    out, start = {}, 0
+    for key, tag, marker in KIT_BLOCKS:
+        found = None
+        for m in re.finditer(r'<%s\b[^>]*>(.*?)</%s>' % (tag, tag), html, re.S):
+            if m.start() >= start and marker in m.group(0):
+                found = m; break
+        if not found:
+            return None, key
+        out[key] = found; start = found.end()
+    return out, None
+
+def refresh_kit(html, tpl):
+    """Replace the app's kit blocks with the template's. Returns (html, changed keys)."""
+    mine, missing = find_blocks(html)
+    if mine is None:
+        raise ValueError('could not find the kit\'s %s block in this app' % missing)
+    theirs, missing = find_blocks(tpl)
+    if theirs is None:
+        raise ValueError('the template has no %s block' % missing)
+    # the app's name as the panel shows it: the literal in the panel script, else
+    # the static panel div, else the page title (all already HTML-safe)
+    name = (re.search(r"'<b>([^<']+)</b>", mine['panel'].group(1))
+            or re.search(r'<div id="kit-panel"><b>([^<]+)</b>', html)
+            or re.search(r'<title>([^<]+)</title>', html))
+    changed, pieces, last = [], [], 0
+    for key, _, _ in KIT_BLOCKS:
+        new = theirs[key].group(0)
+        if key == 'panel':
+            if not name:
+                raise ValueError('could not tell the app\'s name from its page')
+            new = new.replace('{{APP_NAME}}', name.group(1).replace("'", "\\'"))
+        m = mine[key]
+        if m.group(0) != new:
+            changed.append(key)
+        pieces.append(html[last:m.start()]); pieces.append(new); last = m.end()
+    pieces.append(html[last:])
+    return ''.join(pieces), changed
+
 def slugify(name):
     s = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
     return s or 'xr-app'
@@ -60,7 +109,25 @@ def main():
                          'kit pins the head in place, hides the lasers and selects by gaze + trigger')
     ap.add_argument('--retarget', metavar='INDEX_HTML',
                     help='Instead of creating a project, switch this existing index.html (and its xr-project.json) to --dof')
+    ap.add_argument('--refresh-kit', metavar='INDEX_HTML',
+                    help="Instead of creating a project, bring this existing index.html's kit plumbing up to the current template")
     a = ap.parse_args()
+
+    if a.refresh_kit:
+        path = os.path.abspath(a.refresh_kit)
+        html = open(path, encoding='utf-8').read()
+        if 'id="tracking"' not in html:
+            print(json.dumps({'ok': False, 'error': 'this app predates the 3DoF/6DoF switch (no #tracking wrapper) — its rig needs refreshing from the current template first'}))
+            return 2
+        tpl = open(os.path.join(ASSETS, 'scene-template.html'), encoding='utf-8').read()
+        try:
+            new, changed = refresh_kit(html, tpl)
+        except ValueError as e:
+            print(json.dumps({'ok': False, 'error': str(e)})); return 2
+        if changed:
+            open(path, 'w', encoding='utf-8').write(new)
+        print(json.dumps({'ok': True, 'refreshed': path, 'changed': changed, 'upToDate': not changed}, indent=2))
+        return 0
 
     if a.retarget:
         path = os.path.abspath(a.retarget)
@@ -87,7 +154,9 @@ def main():
 
     tpl = open(os.path.join(ASSETS, 'scene-template.html'), encoding='utf-8').read()
     safe_name = a.name.replace('<', '&lt;').replace('>', '&gt;')
-    html = tpl.replace('{{APP_NAME}}', safe_name)
+    # inside the panel script the name sits in a '…' string: escape its quotes
+    html = tpl.replace("'<b>{{APP_NAME}}</b>'", "'<b>" + safe_name.replace('\\', '\\\\').replace("'", "\\'") + "</b>'")
+    html = html.replace('{{APP_NAME}}', safe_name)
     html = apply_dof(html, a.dof)
     open(os.path.join(dest, 'index.html'), 'w', encoding='utf-8').write(html)
     shutil.copy(os.path.join(ASSETS, 'aframe.min.js'), os.path.join(dest, 'aframe.min.js'))

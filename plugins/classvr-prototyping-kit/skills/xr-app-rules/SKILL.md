@@ -11,7 +11,7 @@ description: >
   an app working on a ClassVR headset, so ordinary prompts don't reintroduce known
   failures, plus ready recipes such as passthrough (AR) and the microphone.
 metadata:
-  version: "0.12.0"
+  version: "0.13.0"
 ---
 
 # Rules for editing a kit XR app
@@ -21,6 +21,24 @@ headset and watching something fail that looked fine on a desktop. Apply them
 silently — the user asked for a table, not a lecture on colour spaces.
 
 ## Always
+
+**Check the Vercel connection first.** Every edit ends in a publish, so
+before the first edit in a session run `/connect-vercel`'s **The check** —
+before touching the app. Connected → carry on silently. Not connected → its
+setup script runs now, word for word, then the edit.
+
+**Bring the kit's own parts up to date first.** Before the first edit to an
+app in a session (and on any folder that came from a copy), run
+
+    python3 ${CLAUDE_PLUGIN_ROOT}/skills/new-xr-app/scripts/scaffold.py --refresh-kit "<App>/index.html"
+
+It swaps the four blocks the kit owns — the diary, the panel's style, the
+`xr-kit` component and the status panel — for the current template's, and
+touches nothing the app added. `"upToDate": true` → nothing changed, carry on.
+Otherwise run the preview check before your own edit, and add a changelog line
+under Unreleased (`Changed`: "Updated the kit's built-in parts: status panel
+and error messages"). Don't mention it to the user unless the preview fails;
+it publishes with their change as one new version.
 
 **Edit `index.html` in place, below `<!-- ADD YOUR CONTENT HERE -->`.** Leave the
 `xr-kit` component, the rig, the panel and the `window.BUILD` line alone. Content
@@ -501,24 +519,18 @@ of view that reopens it, so the code is never lost; a new error reopens it.
 The header is always "Oops, something didn't work". The body depends on the
 **route** the diary has to Claude, which the kit works out itself:
 
-- **mailbox** (a legacy case in the template; never shows on a Vercel page):
-  "Don't worry, Claude already has the details. You can continue playing, or
-  take the headset off and tell Claude what you were doing." Footer:
-  `"code 21-625" – Tell this to Claude only if asked.`
-- **headset** (a standalone headset browser — detected as Android + WebXR +
-  immersive-vr supported, or a session running; never by the UA string, which
-  the ClassVR Wolvic overrides — with the logbook on): "You can continue playing. When
-  you're finished, exit to the ClassVR Launcher screen and Claude can collect
-  what happened (keep your headset awake)." Same footer.
-  (The diary reaches the app's Vercel play history anyway, so this card is
-  more cautious than it needs to be. It is harmless and will be reworded in
-  the template; don't change it in one app.)
-- **code** (local file, plain browser — nothing automatic): "Tell Claude: "code
-  21-625" and what you were doing when it happened." No footer — the code carries
-  the build.
+- **relay** (the published Vercel page — `window.KIT.relay` exists, so the
+  diary is going to the app's play history): "Don't worry, Claude already has
+  the details. You can continue playing, or take the headset off and tell
+  Claude what you were doing." Footer: `"code 21-625" – Tell this to Claude
+  only if asked.` The panel also shows "Play record kept for the app's
+  creator" once the first post has gone.
+- **code** (a local file, the preview — nothing automatic): "Tell Claude:
+  "code 21-625" and what you were doing when it happened." No footer — the
+  code carries the build.
 
-The reopen tab reads "▲ Show details" on the first two routes and "▲ Show error ·
-code …" on the third; the HTML panel line ends the same three ways. Keep this
+The reopen tab reads "▲ Show details" on the first route and "▲ Show error ·
+code …" on the second; the HTML panel line ends the same two ways. Keep this
 wording in step across the three places if it is ever changed; never add the
 raw error text to the card — it is in the diary for Claude.
 

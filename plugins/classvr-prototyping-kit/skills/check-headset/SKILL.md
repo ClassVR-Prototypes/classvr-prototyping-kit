@@ -2,7 +2,7 @@
 name: check-headset
 description: This skill should be used when the user asks to "check the headset", "what happened on the headset", "read the headset log", "did it work in VR", "why did it break in the headset", "get the logs from the headset", "check what went wrong when I played it", "did anyone have problems", or invokes /check-headset. After someone has played a kit app from its Vercel link — on a ClassVR headset or in a browser — it reads the app's own play history on Vercel (errors with codes, warnings, everything the app printed, flags the player marked, VR entered or not, frame rate) and explains in plain words what happened — no cables, no developer settings, nothing typed by the player.
 metadata:
-  version: "0.5.0"
+  version: "0.6.0"
 ---
 
 # Check headset
@@ -34,14 +34,12 @@ sessions played after that will be there.
 
 Follow `/publish-to-vercel`, "Reading what happened":
 
-- **Token route** (the normal one — `vercel.via` is `"token"` or the
-  connector is absent): read `<vercel.url>/api/reports` in a built-in browser
-  tab. It is public, so no token is needed. Add `?day=YYYY-MM-DD` for one day
-  or `?session=<id>` for every diary entry of one session.
-- **Connector, within the hour:** `get_runtime_logs` scoped to
-  `vercel.deploymentId` with `query` = `"kit-diary"` has every post, including
-  sessions still running. Older than the hour (Hobby plan) → the history
-  above.
+Read `<vercel.url>/api/reports` in a built-in browser tab (`preview_start`,
+then `fetch()` in `javascript_tool` there for the JSON). It is public, so no
+token and nothing else is needed. Add `?day=YYYY-MM-DD` for one day or
+`?session=<id>` for every diary entry of one session. No built-in browser in
+this session (Cowork on the web) → say it needs the Claude desktop app open
+on their computer, and stop.
 
 A session reaches the history when the player leaves VR or closes the page.
 If they are still in VR, ask them to press the VR button to come out, then
@@ -89,14 +87,14 @@ publish, and "when you've played the new version, ask me to check again".
 
 ## Failure handling
 
-- **Nothing in the history** and nothing in the hour's log: the session may
+- **Nothing in the history**: the session may
   still be running (ask them to come out of VR), or the page never got as far
   as its first script — the history cannot see a page that never loaded.
   Ask what the headset showed (a blank page, an error screen, the home
   screen) and check the address they opened matches `vercel.url`.
 - **`{"ok":false,"reason":"no history store…"}`**: the app was published
   before play history existed, or the store was never connected — offer to
-  add it (`/publish-to-vercel` step 6b, then a republish).
+  add it (`/publish-to-vercel`, "Reading what happened": one bridge call, then a republish).
 - **Sessions only from browsers**: the headset never opened this Vercel
   link — it may have opened an old copy from somewhere else, which reports
   nothing. Point it at the page's QR code.

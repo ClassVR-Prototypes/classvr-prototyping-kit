@@ -1,7 +1,7 @@
 /* kit-relay — the Vercel route's diary delivery.
    Loaded by the slim page right after the kit's diary (window.KIT). Posts the
    diary to /api/log on this same origin, whose function prints it into Vercel's
-   runtime log, where the Vercel connector reads it (get_runtime_logs). One
+   runtime log and keeps each session in the app's play history. One
    route for the headset, a desktop browser and a shared link alike — nothing
    for the player to do, no log to fetch. Each post carries only the diary
    entries added since the previous one (`d`), plus the app's state.
@@ -14,8 +14,16 @@
 (function () {
   var KIT = window.KIT;
   if (!KIT || typeof KIT.report !== 'function') return;
+  // Only a page served from its published address has an /api/log to post to.
+  // The same page opened as a file (a version kept in the app's folder) or
+  // from this computer has no play history, so the relay stays off and the
+  // error card asks for the code instead.
+  var host = location.hostname;
+  if (!/^https?:$/.test(location.protocol) || !host || host === 'localhost' || /^127\./.test(host)
+      || host === '[::1]' || host === '0.0.0.0') return;
   var ENDPOINT = '/api/log';
-  var session = (KIT.logbook && KIT.logbook().session) || (KIT.mailbox && KIT.mailbox().session)
+  var session = (KIT.session && KIT.session())
+                || (KIT.logbook && KIT.logbook().session)                // pages made with older templates
                 || ('s' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7));
   var upTo = 0, seq = 0, lastAt = 0, timer = null, everPresented = false, sent = 0;
   var FULL_MAX = 2, fullSent = 0, fullUpTo = -1;
@@ -66,6 +74,7 @@
       try { fetch(ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text, keepalive: true }).catch(function () {}); } catch (e) {}
     }
     sent++;
+    if (KIT.relayed) { try { KIT.relayed(sent); } catch (e) {} }   // the panel says a record is being kept
   }
   function send(reason, force) {
     var wait = 2000 - (Date.now() - lastAt);

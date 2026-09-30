@@ -59,7 +59,8 @@ window.KIT_CHECKS = [
 <script>
 window.KIT = (function () {
   var MAX = 120, diary = [], errorLog = [], seq = 0, t0 = Date.now(), errors = 0,
-      handlers = { error: [], checks: [], mailbox: [], flag: [], logbook: [] };
+      handlers = { error: [], checks: [], flag: [], relay: [] },
+      session = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);   // one id per page visit
   function now() { return Math.round((Date.now() - t0) / 100) / 10; }        // seconds, 1 dp
   function fire(ev, a, b) { handlers[ev].forEach(function (f) { try { f(a, b); } catch (e) {} }); }
   // Every error gets a short code the player can read back: <build>-<line>
@@ -81,8 +82,8 @@ window.KIT = (function () {
   }
   // Line anchor: build.py stamps this statement's own line number into the
   // build; the probe measures where it actually runs. The difference is the
-  // wrapper's offset (the artifact viewer adds a skeleton, artifact.py strips
-  // boilerplate), so reported lines always refer to the build file.
+  // wrapper's offset (the slim Vercel page, or any page that embeds this one),
+  // so reported lines always refer to the build file.
   var PROBE_EXPECT = /*BUILD_PROBE*/0, lineOffset = 0;
   try { throw new Error('probe'); } catch (e) {
     var pm = /:(\d+):\d+\)?\s*$/.exec((e.stack || '').split('\n')[1] || (e.stack || '').split('\n')[0] || '');
@@ -190,162 +191,11 @@ window.KIT = (function () {
     };
   }
 
-  // ---- mailbox --------------------------------------------------------------
-  // When this page is open as a Claude Artifact, the viewer offers the page a
-  // small database (claude.use('db')). The diary posts itself there, so the
-  // app's creator can ask Claude "did anyone have problems?" and get every
-  // tester's session without the tester doing anything. Anywhere else — the
-  // headset, a local file, the ClassCloud link — there is no runtime and this
-  // does nothing. One document per session at reports/<session id>, rewritten
-  // whole each time (latest state wins). Reports carry no personal data by
-  // construction: no names, no typed text, no addresses beyond this page's.
-  var mailbox = { on: false, sent: 0, db: null, pending: null, lastAt: 0, timer: null, everPresented: false,
-                  id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7) };
-  function browserName() {
-    var ua = navigator.userAgent, m;
-    if (/Wolvic/i.test(ua)) return 'Wolvic';
-    if (/Android/i.test(ua) && 'xr' in navigator) return 'headset browser (Android WebXR)';
-    if (/OculusBrowser/i.test(ua)) return 'Meta Quest Browser';
-    if ((m = /(Edg|Chrome|Firefox|Safari)\/(\d+)/.exec(ua))) return (m[1] === 'Edg' ? 'Edge' : m[1]) + ' ' + m[2];
-    return 'unknown';
-  }
-  function platformName() {
-    var ua = navigator.userAgent;
-    return /Android/i.test(ua) ? 'Android' : /iPhone|iPad/i.test(ua) ? 'iOS' : /Windows/i.test(ua) ? 'Windows'
-         : /Mac/i.test(ua) ? 'macOS' : /Linux/i.test(ua) ? 'Linux' : 'unknown';
-  }
-  function envelope(reason) {
-    var r = report();
-    if (r.presenting) mailbox.everPresented = true;
-    return {
-      session: mailbox.id, app: document.title, build: r.build, reason: reason,
-      started: new Date(t0).toISOString(), updated: new Date().toISOString(),
-      status: r.errors ? 'errors' : r.flags.length ? 'flagged' : (r.sceneLoaded ? 'ok' : 'loading'),
-      secondsRunning: r.secondsRunning, browser: browserName(), platform: platformName(),
-      framed: r.framed, webxr: r.webxr, enteredVR: mailbox.everPresented,
-      dof: r.dof, lock: r.lock,
-      sceneLoaded: r.sceneLoaded, entities: r.entities,
-      controllers: r.controllers, presses: r.presses, turns: r.turns, fps: r.fps,
-      errors: r.errors, firstCode: (r.errorList[0] && r.errorList[0].code) || null, flags: r.flags,
-      errorList: r.errorList, events: r.diary
-    };
-  }
-  function post(reason, force) {
-    if (!mailbox.db) { mailbox.pending = reason; return; }               // runtime not ready yet: keep the latest reason
-    var wait = 10000 - (Date.now() - mailbox.lastAt);
-    if (!force && wait > 0) {                                             // at most one write per 10 s
-      if (!mailbox.timer) mailbox.timer = setTimeout(function () { mailbox.timer = null; post(reason, true); }, wait);
-      return;
-    }
-    mailbox.lastAt = Date.now();
-    var body; try { body = envelope(reason); } catch (e) { return; }
-    try {
-      mailbox.db.doc('reports/' + mailbox.id).set(body).then(function () {
-        mailbox.sent++; fire('mailbox', 'sent', mailbox.sent);
-      }, function () { /* quota, revoked, offline — the report stays in the page */ });
-    } catch (e) {}
-  }
-  (function connect() {
-    var tries = 0;
-    function attempt() {
-      var c = window.claude;
-      if (c && typeof c.use === 'function') {
-        try {
-          c.use('db').then(function (db) {
-            if (!db) return;                                              // not an artifact view, or not granted
-            mailbox.db = db; mailbox.on = true; fire('mailbox', 'on');
-            if (mailbox.pending) { var why = mailbox.pending; mailbox.pending = null; post(why, true); }
-          }, function () {});
-        } catch (e) {}
-        return;
-      }
-      if (++tries < 20) setTimeout(attempt, 250);                         // the runtime may attach shortly after load
-    }
-    attempt();
-  })();
-  handlers.error.push(function (entry, count) { post('error', count === 1); });  // first error goes immediately
-  handlers.flag.push(function () { post('flag', true); });                          // a flag always goes immediately
-  document.addEventListener('visibilitychange', function () { if (document.hidden) post('leave', true); });
-  window.addEventListener('pagehide', function () { post('leave', true); });
-  window.addEventListener('load', function () { setTimeout(function () { post('start', true); }, 4000); });
-  setInterval(function () { post('heartbeat', true); }, 60000);
-
-  // ---- logbook ------------------------------------------------------------------
-  // The headset route. On a ClassVR headset there is no artifact runtime, but
-  // Wolvic writes every main-frame navigation start to the Android log
-  //   D VRB[Session]: onLoadRequest: <url>
-  // and ClassCloud can collect that log from the headset on request. Same-
-  // document navigations count, so the diary rewrites this page's own #fragment
-  // with history.replaceState — no reload, no history entry, a running XR
-  // session is untouched — and every entry lands in the device log, where the
-  // /check-headset step reads it back. Verified 2026-09-07 on a ClassVR
-  // headset: a 3.6 KB line arrives intact, so each beacon is chunked at 3000
-  // characters. Each beacon carries only the diary entries added since the
-  // last one; the reader stitches a session back together by id and number.
-  // Runs everywhere the mailbox doesn't (the ClassCloud copy, a local file, a
-  // plain browser tab); off a headset it only changes the address bar.
-  //   #kit=<session>-<beacon no>-<part>-<parts>.<base64url JSON>
-  var logbook = { on: false, sent: 0, seq: 0, upTo: 0, lastAt: 0, timer: null, everPresented: false, id: mailbox.id };
-  (function () { var framed = false; try { framed = window.top !== window.self; } catch (e) { framed = true; } logbook.on = !framed; })();
-  function b64url(str) {
-    try { return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
-    catch (e) { return ''; }
-  }
-  function compactEntry(d) {
-    var e = [d.i, d.t, d.kind, d.text];
-    if (d.code) e.push(d.code);
-    if (d.n) e.push('x' + d.n);
-    return e;
-  }
-  function logbookEnvelope(reason) {
-    var r = report();
-    if (r.presenting) logbook.everPresented = true;
-    var fresh = diary.filter(function (d) { return d.i > logbook.upTo; }), dropped = 0;
-    if (fresh.length > 40) { dropped = fresh.length - 40; fresh = fresh.slice(-40); }
-    if (diary.length) logbook.upTo = diary[diary.length - 1].i;
-    var body = {
-      v: 1, k: reason, b: r.build, t: r.secondsRunning,
-      st: r.errors ? 'errors' : r.flags.length ? 'flagged' : (r.sceneLoaded ? 'ok' : 'loading'),
-      vr: r.presenting, ev: logbook.everPresented, fps: r.fps, c: r.controllers, p: r.presses, tn: r.turns,
-      e: r.errors, f: r.flags.length, d: fresh.map(compactEntry)
-    };
-    if (dropped) body.dropped = dropped;
-    if (r.lock) body.lk = [r.lock.moved, r.lock.held, r.lock.frames];   // 3DoF lock: how far the player really moved, how far the view moved, frames locked
-    if (reason === 'boot' || reason === 'start') {
-      body.app = document.title; body.browser = browserName(); body.platform = platformName();
-      if (reason === 'start') body.dof = r.dof;                            // the scene exists by then (at boot it is not parsed yet)
-      body.webxr = r.webxr; body.secure = r.secure; body.ua = navigator.userAgent.slice(0, 160);
-    }
-    return body;
-  }
-  function beacon(reason, force) {
-    if (!logbook.on) return;
-    var wait = 2000 - (Date.now() - logbook.lastAt);
-    if (!force && wait > 0) {                                             // at most one beacon per 2 s unless forced
-      if (!logbook.timer) logbook.timer = setTimeout(function () { logbook.timer = null; beacon(reason, true); }, wait);
-      return;
-    }
-    logbook.lastAt = Date.now();
-    var body; try { body = JSON.stringify(logbookEnvelope(reason)); } catch (e) { return; }
-    var enc = b64url(body); if (!enc) return;
-    var n = ++logbook.seq, SIZE = 3000, parts = Math.max(1, Math.ceil(enc.length / SIZE)), base = location.href.split('#')[0];
-    for (var p = 1; p <= parts; p++) {
-      var frag = '#kit=' + logbook.id + '-' + n + '-' + p + '-' + parts + '.' + enc.slice((p - 1) * SIZE, p * SIZE);
-      try { history.replaceState(history.state, '', base + frag); } catch (e) { try { location.hash = frag.slice(1); } catch (e2) { return; } }
-    }
-    logbook.sent++; fire('logbook', reason, logbook.sent);
-  }
-  if (logbook.on) {
-    beacon('boot', true);                                                  // before the libraries load: build, browser
-    handlers.error.push(function (entry, count) { beacon('error', count === 1); });
-    handlers.flag.push(function () { beacon('flag', true); });
-    document.addEventListener('enter-vr', function () { setTimeout(function () { beacon('vr', true); }, 1500); });
-    document.addEventListener('exit-vr', function () { beacon('vr', true); });
-    document.addEventListener('visibilitychange', function () { if (document.hidden) beacon('end', true); });
-    window.addEventListener('pagehide', function () { beacon('end', true); });
-    window.addEventListener('load', function () { setTimeout(function () { beacon('start', true); }, 4000); });
-    setInterval(function () { beacon('beat', true); }, 30000);
-  }
+  // ---- delivery -------------------------------------------------------------
+  // The published Vercel page adds kit-relay, which posts this diary to the
+  // app's own play history (read back with /check-headset). It announces each
+  // post through KIT.relayed() so the panel can say a record is being kept.
+  // A local file or the preview has no relay: the error code is the trace.
 
   // ---- self-checks --------------------------------------------------------
   function helpers() {
@@ -490,8 +340,8 @@ window.KIT = (function () {
     note: note, report: report, runChecks: runChecks, checkResults: null, fps: null,
     setImmersive: function (ok) { immersive = !!ok; },
     headsetBrowser: headsetBrowser,
-    mailbox: function () { return { on: mailbox.on, sent: mailbox.sent, session: mailbox.id }; },
-    logbook: function () { return { on: logbook.on, sent: logbook.sent, session: logbook.id }; },
+    session: function () { return session; },
+    relayed: function (n) { fire('relay', n); },
     flag: flag,
     on: function (ev, fn) { if (handlers[ev]) handlers[ev].push(fn); }
   };
@@ -535,7 +385,7 @@ window.KIT = (function () {
                        color: #40505f; letter-spacing: .02em; }
   #kit-panel .sub h4:first-child { margin-top: 0; }
   #kit-panel .sub ul { margin: 0 0 4px; padding-left: 16px; }
-  /* Small windows (the artifact side tab): keep the panel out of the middle of
+  /* Small windows (a narrow browser window or side panel): keep the panel out of the middle of
      the view — tighter type, narrower, and it lets the scene through more. */
   @media (max-width: 700px), (max-height: 520px) {
     #kit-panel { font-size: 11px; line-height: 1.4; padding: 7px 9px; max-width: 250px;
@@ -673,8 +523,8 @@ AFRAME.registerComponent('xr-kit', {
     this.is3dof = function () { return self.data.dof === 3; };
 
     // Developer-facing diagnostics go to the console and the diary, never the
-    // panel. The preview step collects the diary on desktop; on a headset it
-    // reaches Claude through the logbook (see window.KIT) and /check-headset.
+    // panel. The preview step collects the diary on desktop; on the published
+    // page it reaches the app's play history (see window.KIT) and /check-headset.
     this.log = function () {
       var args = ['[xr-kit]'].concat(Array.prototype.slice.call(arguments));
       try { console.log.apply(console, args); } catch (e) {}
@@ -960,16 +810,10 @@ AFRAME.registerComponent('xr-kit', {
     tab.position.set(0, -0.5, -1.1); tab.rotation.x = -0.35; tab.renderOrder = 10000; tab.visible = false; tab.frustumCulled = false;
     var first = null, count = 0, attached = false, closed = false, hover = null;   // hover: 'close' | 'open' | null
     // Where do the details go? That decides what the card asks of the player.
-    //  'mailbox'  — artifact link, runtime granted: Claude already has them.
-    //  'headset'  — Wolvic on a ClassVR headset: the diary is in the device log;
-    //               Claude collects it once the player is back on the Launcher.
-    //  'code'     — nothing automatic (local file, plain browser): the code matters.
-    function route() {
-      var mb = window.KIT.mailbox && window.KIT.mailbox(), lb = window.KIT.logbook && window.KIT.logbook();
-      if (mb && mb.on) return 'mailbox';
-      if (lb && lb.on && window.KIT.headsetBrowser && window.KIT.headsetBrowser()) return 'headset';
-      return 'code';
-    }
+    //  'relay' — the published page: the diary goes to the app's play history,
+    //            so Claude already has the details.
+    //  'code'  — nothing automatic (a local file, the preview): the code matters.
+    function route() { return window.KIT.relay ? 'relay' : 'code'; }
     function codeText() { return '"code ' + (first && first.code || '?') + '"'; }
     function drawTab() {
       tg.clearRect(0, 0, 512, 80);
@@ -1062,8 +906,7 @@ AFRAME.registerComponent('xr-kit', {
       // Lay out first: the code line sits right under the body, and the card is
       // only as tall as what it says.
       var r0 = route(), body0, foot0;
-      if (r0 === 'mailbox') { body0 = 'Don\'t worry, Claude already has the details. You can continue playing, or take the headset off and tell Claude what you were doing.'; foot0 = codeText() + ' \u2013 Tell this to Claude only if asked.'; }
-      else if (r0 === 'headset') { body0 = 'You can continue playing. When you\'re finished, exit to the ClassVR Launcher screen and Claude can collect what happened (keep your headset awake).'; foot0 = codeText() + ' \u2013 Tell this to Claude only if asked.'; }
+      if (r0 === 'relay') { body0 = 'Don\'t worry, Claude already has the details. You can continue playing, or take the headset off and tell Claude what you were doing.'; foot0 = codeText() + ' \u2013 Tell this to Claude only if asked.'; }
       else { body0 = 'Tell Claude: ' + codeText() + ' and what you were doing when it happened.'; foot0 = ''; }
       var extra0 = [];
       if (count > 1) extra0.push('+ ' + (count - 1) + ' more after this one');
@@ -1428,16 +1271,15 @@ AFRAME.registerComponent('xr-kit', {
       return '<div class="' + cls + '">' + mark + ' ' + label +
              (note ? ' <span style="opacity:.7">' + note + '</span>' : '') + '</div>';
     }
-    var lines = [], xrLine = '', problemLine = '', checksLine = '', mailboxLine = '', flagLine = '';
+    var lines = [], xrLine = '', problemLine = '', checksLine = '', recordLine = '', flagLine = '';
     lines.push(row('Secure context', !!window.isSecureContext));
     lines.push(row('A-Frame', typeof AFRAME !== 'undefined',
                    typeof AFRAME !== 'undefined' ? 'v' + AFRAME.version + ' (bundled)' : 'aframe.min.js missing'));
     lines.push(row('navigator.xr', 'xr' in navigator));
-    // Inside another page's frame (an artifact viewer, an LMS embed) WebXR is
+    // Inside another page's frame (an LMS embed, a slide tool) WebXR is usually
     // blocked by the frame's permission policy: isSessionSupported throws
-    // SecurityError and no VR button appears. The frame also blocks opening the
-    // page on its own, so there is no way out from here — headsets use the
-    // ClassCloud build (QR code), which is loaded top-level.
+    // SecurityError and no VR button appears. Nothing can fix that from here —
+    // headsets open the published link from its QR code, top-level.
     var framed = false;
     try { framed = window.top !== window.self; } catch (e) { framed = true; }
 
@@ -1463,7 +1305,7 @@ AFRAME.registerComponent('xr-kit', {
         + (minimised ? 'Show everything' : 'Minimise') + '">' + (minimised ? '+' : '&minus;') + '</button>'
         + '<span class="build">build ' + window.BUILD + '</span>'
         + '<div class="kit-body">' + targetLine()
-        + lines.join('') + xrLine + problemLine + flagLine + checksLine + mailboxLine
+        + lines.join('') + xrLine + problemLine + flagLine + checksLine + recordLine
         + controlsHtml() + '</div>';
     }
     // Which headset the app is designed for. A 3DoF app is played on a 6DoF
@@ -1492,9 +1334,7 @@ AFRAME.registerComponent('xr-kit', {
     if (window.KIT) {
       window.KIT.on('error', function (entry, count) {
         if (!window.__kitFirstCode) window.__kitFirstCode = entry.code;
-        var mb = window.KIT.mailbox && window.KIT.mailbox(), lb = window.KIT.logbook && window.KIT.logbook();
-        var how = (mb && mb.on) ? '— Claude has the details'
-                : (lb && lb.on && window.KIT.headsetBrowser && window.KIT.headsetBrowser()) ? '— exit to the ClassVR Launcher when finished and Claude can collect what happened'
+        var how = window.KIT.relay ? '— Claude has the details'
                 : '— tell Claude: "code ' + window.__kitFirstCode + '"';
         problemLine = row('Oops, something didn\'t work', false, how + (count > 1 ? ' (+' + (count - 1) + ' more)' : ''));
         if (count === 1 && minimised) { setMin(false); return; }             // the first problem opens the panel again
@@ -1506,14 +1346,9 @@ AFRAME.registerComponent('xr-kit', {
                        '— tell Claude what you saw' + (n > 1 ? ' (' + n + ' marks)' : ''));
         render();
       });
-      window.KIT.on('mailbox', function (state, n) {
-        mailboxLine = row(state === 'sent' ? 'Report sent to the app\'s creator' : 'Reports from this page go to the app\'s creator',
-                          true, state === 'sent' && n > 1 ? '(' + n + ')' : '');
-        render();
-      });
-      window.KIT.on('logbook', function (reason, n) {
-        if (mailboxLine) return;                                             // the link already says reports reach the creator
-        mailboxLine = row('Play record kept for the app\'s creator', true, /Android/i.test(navigator.userAgent) && 'xr' in navigator ? '(read from the headset log)' : '');
+      window.KIT.on('relay', function (n) {
+        if (recordLine) return;                                              // say it once
+        recordLine = row('Play record kept for the app\'s creator', true);
         render();
       });
       window.KIT.on('checks', function (results) {

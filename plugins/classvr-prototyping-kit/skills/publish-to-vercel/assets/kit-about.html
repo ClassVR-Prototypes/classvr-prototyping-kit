@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>About</title>
+<style>
+:root { --bg:#f7f7f5; --fg:#1e1e1e; --muted:#6b6b6b; --card:#fff; --line:#e3e3e0; --accent:#2b6cb0; }
+@media (prefers-color-scheme: dark) { :root { --bg:#141414; --fg:#ececec; --muted:#a0a0a0; --card:#1e1e1e; --line:#2c2c2c; --accent:#7fb3ff; } }
+body { margin:0; padding:24px 16px 48px; background:var(--bg); color:var(--fg); font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+main { max-width:720px; margin:0 auto; }
+nav { display:flex; flex-wrap:wrap; gap:6px 16px; margin:0 0 18px; font-size:.95rem; }
+section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:6px 20px 14px; margin:0 0 18px; overflow-wrap:anywhere; }
+h1 { font-size:1.5rem; margin:10px 0 6px; } h2 { font-size:1.15rem; margin:22px 0 6px; }
+h3 { font-size:1rem; margin:16px 0 4px; } h4 { font-size:.95rem; margin:12px 0 4px; color:var(--muted); }
+a { color:var(--accent); } ul, ol { padding-left:22px; }
+code { font:.9em ui-monospace,Menlo,Consolas,monospace; background:var(--bg); padding:1px 5px; border-radius:4px; }
+pre { background:var(--bg); padding:10px 12px; border-radius:8px; overflow:auto; }
+.label { font-size:.8rem; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:14px 0 0; }
+</style>
+</head>
+<body>
+<main>
+<nav id="nav"></nav>
+<section><p class="label" id="lr">About this app</p>
+<div id="readme"><p>Loading…</p></div>
+</section>
+<section><p class="label">What changed</p>
+<div id="changelog"></div>
+</section>
+</main>
+<script>
+/* ClassVR Prototyping Kit — the "About this app" page (kit 0.39).
+   One page for every app, hosted in the shared library as about-<kit>.html.
+   An app's /about/ redirects here with ?app=https://<project>.vercel.app
+   (and &v=N for one version). It reads the README and changelog that every
+   published page carries inside it and shows them — so the about page no
+   longer travels with each publish. Same output as appdocs.about_page(). */
+(function () {
+  'use strict';
+  function esc(s, q) {
+    s = String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return q ? s.replace(/"/g, '&quot;').replace(/'/g, '&#x27;') : s;
+  }
+  function unesc(s) {
+    return String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&amp;/g, '&');
+  }
+  function inline(t, refs) {
+    return t.split(/(`[^`]*`)/).map(function (p) {
+      if (p.length > 1 && p[0] === '`' && p[p.length - 1] === '`') return '<code>' + esc(p.slice(1, -1), true) + '</code>';
+      var s = esc(p);
+      s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (m, a, b) {
+        var href = unesc(b);
+        if (!/^(https?:\/\/|\/|\.\/|\.\.\/|#)/.test(href)) return m;
+        return '<a href="' + esc(href, true) + '">' + a + '</a>';
+      });
+      s = s.replace(/&lt;(https?:\/\/[^\s&]+)&gt;/g, function (m, u) { return '<a href="' + u + '">' + u + '</a>'; });
+      s = s.replace(/(?<![\]\w])\[([^\]]+)\](?![(\[:])/g, function (m, a) {
+        var href = refs[unesc(a)]; return href ? '<a href="' + esc(href, true) + '">' + a + '</a>' : m;
+      });
+      s = s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+      s = s.replace(/(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])/g, '<i>$1</i>');
+      return s;
+    }).join('');
+  }
+  function mdHtml(md) {
+    var refs = {}, lines = [];
+    (md || '').split('\n').forEach(function (l) {
+      var m = /^\[([^\]]+)\]:\s+(\S+)\s*$/.exec(l);
+      if (m) refs[m[1]] = m[2]; else lines.push(l);
+    });
+    var out = [], para = [], stack = [], code = null;
+    function flush() { if (para.length) { out.push('<p>' + inline(para.map(function (x) { return x.trim(); }).join(' '), refs) + '</p>'); para = []; } }
+    function close(d) { d = d || 0; while (stack.length > d) out.push('</li></' + stack.pop() + '>'); }
+    lines.forEach(function (l) {
+      var m;
+      if (code !== null) {
+        if (l.trim().indexOf('```') === 0) { out.push('<pre><code>' + esc(code.join('\n'), true) + '</code></pre>'); code = null; }
+        else code.push(l);
+        return;
+      }
+      if (l.trim().indexOf('```') === 0) { flush(); close(); code = []; return; }
+      if ((m = /^(#{1,6})\s+(.*)$/.exec(l))) { flush(); close(); var n = m[1].length; out.push('<h' + n + '>' + inline(m[2], refs) + '</h' + n + '>'); return; }
+      if ((m = /^(\s*)([-*]|\d+\.)\s+(.*)$/.exec(l))) {
+        flush();
+        var depth = Math.floor(m[1].replace(/\t/g, '  ').length / 2) + 1, kind = /^\d/.test(m[2]) ? 'ol' : 'ul';
+        if (depth > stack.length) { while (depth > stack.length) { out.push('<' + kind + '><li>'); stack.push(kind); } }
+        else { close(depth); out.push('</li><li>'); }
+        out.push(inline(m[3], refs));
+        return;
+      }
+      if (!l.trim()) { flush(); close(); return; }
+      if (stack.length) { out.push(' ' + inline(l.trim(), refs)); return; }
+      para.push(l);
+    });
+    flush(); close();
+    if (code !== null) out.push('<pre><code>' + esc(code.join('\n'), true) + '</code></pre>');
+    return out.join('\n');
+  }
+  var REF = /^\[[^\]]+\]:\s+\S/, VER = /^##\s+\[([^\]]+)\](.*)$/;
+  function splitSections(text) {
+    var lines = (text || '').replace(/\n+$/, '').split('\n'), refs = [];
+    while (lines.length && (REF.test(lines[lines.length - 1]) || (!lines[lines.length - 1].trim() && refs.length))) {
+      var l = lines.pop(); if (l.trim()) refs.unshift(l);
+    }
+    var head = [], sections = [], cur = null;
+    lines.forEach(function (l) {
+      if (l.indexOf('## ') === 0) { cur = [l, []]; sections.push(cur); }
+      else if (!cur) head.push(l); else cur[1].push(l);
+    });
+    return [head.join('\n').replace(/\n+$/, ''), sections.map(function (s) { return [s[0], s[1].join('\n').replace(/^\n+|\n+$/g, '')]; }), refs];
+  }
+  function joinSections(head, sections, refs) {
+    var out = head.replace(/\n+$/, '') + '\n';
+    sections.forEach(function (s) { out += '\n' + s[0] + '\n' + (s[1].trim() ? '\n' + s[1] + '\n' : ''); });
+    if (refs.length) out += '\n' + refs.join('\n') + '\n';
+    return out;
+  }
+  function hasEntries(b) { return (b || '').split('\n').some(function (l) { return /^\s*[-*]\s+\S/.test(l); }); }
+  function prettyChangelog(md) {
+    if (!md) return md;
+    var p = splitSections(md), refmap = {};
+    p[2].forEach(function (r) { var m = /^\[([^\]]+)\]:\s+(\S+)/.exec(r); if (m) refmap[m[1]] = m[2]; });
+    var out = [];
+    p[1].forEach(function (s) {
+      var h = s[0], b = s[1], m = VER.exec(h);
+      if (m) {
+        var label = m[1].trim();
+        if (label.toLowerCase() === 'unreleased') { if (!hasEntries(b)) return; h = '## Not published yet'; }
+        else { var title = 'Version ' + label; h = '## ' + (refmap[label] ? '[' + title + '](' + refmap[label] + ')' : title) + m[2]; }
+      }
+      out.push([h, b]);
+    });
+    return joinSections(p[0], out, p[2].filter(function (r) { return !/^\[\d+\]:/.test(r); }));
+  }
+  function block(page, id) {
+    var m = new RegExp('<script type="text/markdown" id="' + id + '">\\n?([\\s\\S]*?)\\n?<\/script>').exec(page);
+    return m ? m[1].replace(/<\\!--/g, '<!--').replace(/<\\\//g, '</') + '\n' : null;
+  }
+  window.KitAbout = { mdHtml: mdHtml, prettyChangelog: prettyChangelog, block: block };
+
+  var q = new URLSearchParams(location.search);
+  var app = (q.get('app') || '').replace(/\/+$/, ''), v = parseInt(q.get('v') || '', 10);
+  var nav = document.getElementById('nav'), rd = document.getElementById('readme'), cl = document.getElementById('changelog');
+  if (!/^https:\/\/[a-z0-9.-]+$/i.test(app)) { rd.innerHTML = '<p>This page describes a ClassVR prototype. Open it from the app’s own /about/ address.</p>'; return; }
+  nav.innerHTML = '<a href="' + esc(app + (v ? '/v/' + v + '/' : '/'), true) + '">Open the app</a> <a href="' + esc(app, true) + '/history">Every version</a>';
+  Promise.all([
+    fetch(app + (v ? '/v/' + v + '/' : '/'), { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); }),
+    fetch(app + '/history.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
+  ]).then(function (res) {
+    var page = res[0], doc = res[1] || {};
+    var name = doc.app || ((/<title>([^<]*)<\/title>/.exec(page) || [])[1]) || 'This app';
+    var b = /window\.BUILD = (\d+);/.exec(page);
+    document.title = name + ' — about';
+    if (b) document.getElementById('lr').textContent = 'About this app · version ' + b[1];
+    var readme = block(page, 'xr-kit-readme'), changelog = block(page, 'xr-kit-changelog');
+    rd.innerHTML = readme ? mdHtml(readme) : '<p>No description has been written for this app yet.</p>';
+    cl.innerHTML = changelog ? mdHtml(prettyChangelog(changelog)) : '<p>No changelog has been kept for this app yet.</p>';
+  }).catch(function () { rd.innerHTML = '<p>Could not read this app from ' + esc(app) + '.</p>'; });
+})();
+</script>
+</body>
+</html>

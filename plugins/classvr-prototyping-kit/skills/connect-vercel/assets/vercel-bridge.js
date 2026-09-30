@@ -1,9 +1,18 @@
-/* ClassVR Prototyping Kit — Vercel bridge (kit 0.31).
+/* ClassVR Prototyping Kit — Vercel bridge (kit 0.39.1, bridge 3).
  *
  * Run in the built-in browser pane on a page of https://api.vercel.com (open
  * https://api.vercel.com/v2/user first — same origin, so no CORS and the token
- * stays in that origin's localStorage). Paste this whole file into
- * javascript_tool once per page load; it defines window.KV.
+ * stays in that origin's localStorage). It defines window.KV.
+ *
+ * /connect-vercel pastes this whole file. Every publish script carries the
+ * parts it needs, written into it by vercel_payload.py: the core, plus the
+ * @part:first block (a first publish) or the @part:deploy block (a deploy),
+ * comments left out — visible in full in the script, never fetched from
+ * anywhere. (0.39.0 fetched the bridge from the shared library and ran it; a
+ * fresh session's permission check rightly refused running downloaded code in
+ * the tab that holds the token.) Blocks between @setup-only markers are only
+ * in the pasted copy. Checking a publish is live happens on the app's own
+ * page (publish_prep.py's live check), so it needs no token and no bridge.
  *
  * The token is typed by the person into KV.setupBox() and lives only in this
  * browser profile's localStorage for api.vercel.com. No function here ever
@@ -12,21 +21,27 @@
 window.KV = (function () {
   'use strict';
   var KEY = 'classvr-kit.vercel';
-  var VERSION = 1;
+  var VERSION = 3;
+  var K = { setupResult: null, version: VERSION };
 
   function cfg() { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { return null; } }
+
   function save(c) { localStorage.setItem(KEY, JSON.stringify(c)); }
+
   function onVercelApi() { return location.origin === 'https://api.vercel.com'; }
+
   function need() {
     if (!onVercelApi()) throw new Error('KV: open https://api.vercel.com/v2/user in the browser pane first');
     var c = cfg();
     if (!c || !c.token) throw new Error('KV: not connected — run the connect-vercel skill');
     return c;
   }
+
   function withTeam(path, c) {
     if (!c.teamId || /[?&](teamId|slug)=/.test(path)) return path;
     return path + (path.indexOf('?') < 0 ? '?' : '&') + 'teamId=' + encodeURIComponent(c.teamId);
   }
+
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
   async function raw(path, opts, token) {
@@ -55,7 +70,9 @@ window.KV = (function () {
     return { connected: true, username: c.username, teamId: c.teamId, teamSlug: c.teamSlug,
              savedAt: c.savedAt, tokenEnds: c.token.slice(-4), bridge: VERSION };
   }
+  K.status = status; K.api = api; K.sha1 = sha1;
 
+  /* @setup-only */
   // Check the stored token still works (expired / revoked tokens show up here).
   async function check() {
     var c = need();
@@ -110,6 +127,17 @@ window.KV = (function () {
 
   function forget() { localStorage.removeItem(KEY); return { connected: false }; }
 
+  // Short history of a project's publishes.
+  async function deployments(projectId, limit) {
+    var r = await api('/v6/deployments?projectId=' + projectId + '&limit=' + (limit || 5));
+    return (r.ok ? r.body.deployments : []).map(function (d) {
+      return { id: d.uid, url: d.url, target: d.target, state: d.state, created: new Date(d.created).toISOString() };
+    });
+  }
+  K.check = check; K.setupBox = setupBox; K.forget = forget; K.deployments = deployments;
+  /* @end-setup-only */
+
+  /* @part:first */
   // Make sure a project exists (framework: none) and return its public address.
   // Call BEFORE the first build so the page's QR code carries the real address:
   // Vercel shortens long names (e.g. classvr-token-test-scene-lukemosele.vercel.app).
@@ -130,6 +158,46 @@ window.KV = (function () {
              url: pub ? 'https://' + pub : null, domains: doms };
   }
 
+  // Blob store for play history, created and connected in one call.
+  async function createStore(name, projectId) {
+    var r = await api('/v1/storage/stores/blob', { body: { name: name, access: 'private', region: 'lhr1', projectId: projectId } });
+    var env = await api('/v10/projects/' + projectId + '/env');
+    var keys = ((env.ok && env.body.envs) || []).map(function (e) { return e.key; });
+    return { ok: r.ok, status: r.status, storeId: r.ok ? r.body.store.id : null,
+             tokenSet: keys.indexOf('BLOB_READ_WRITE_TOKEN') >= 0, error: r.ok ? null : r.body && r.body.error };
+  }
+
+  // First publish of an app, in one call: work out the project name from the
+  // app's slug and the account's username, create the project (or find it
+  // again on a re-run), learn its real public address, and give it a play
+  // history store — all before the first build, so the first deploy is the
+  // only deploy.
+  async function firstPublish(slug, opts) {
+    opts = opts || {};
+    var c = need();
+    var user = (c.username || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    var s = String(slug || 'app').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'app';
+    var tail = (user ? '-' + user : '') + (opts.suffix ? '-' + opts.suffix : '');
+    var room = 63 - 'classvr-'.length - tail.length;
+    if (s.length > room) s = s.slice(0, Math.max(1, room)).replace(/-+$/, '');
+    var name = opts.name || ('classvr-' + s + tail);
+    var p = await ensureProject(name);
+    if (!p.ok) return { ok: false, stage: 'project', name: name, status: p.status, error: p.error };
+    var host = p.url ? p.url.replace(/^https:\/\//, '').replace(/\.vercel\.app$/, '') : '';
+    var expected = !!host && name.indexOf(host) === 0;      // the name, or Vercel's shortened form of it
+    var store = { skipped: true };
+    if (expected && opts.store !== false) {
+      var env = await api('/v10/projects/' + p.projectId + '/env');
+      var has = ((env.ok && env.body.envs) || []).some(function (e) { return e.key === 'BLOB_READ_WRITE_TOKEN'; });
+      store = has ? { ok: true, existing: true, tokenSet: true } : await createStore(name.slice(0, 24).replace(/-+$/, '') + '-history', p.projectId);
+    }
+    return { ok: expected, stage: expected ? 'ready' : 'address', name: p.name, created: p.created, projectId: p.projectId,
+             url: p.url, expectedAddress: expected, teamId: c.teamId || null, username: c.username, store: store };
+  }
+  K.ensureProject = ensureProject; K.createStore = createStore; K.firstPublish = firstPublish;
+  /* @end-part */
+
+  /* @part:deploy */
   // Deploy. spec = { name, target, projectSettings?, files: [ {file,data} | {file,sha,size} ],
   //                  expect: { '<file>': '<sha1>' } }  — every inline file is checked
   // against expect before anything is sent, so a copying slip can never go live.
@@ -148,7 +216,30 @@ window.KV = (function () {
     if (spec.projectSettings) body.projectSettings = spec.projectSettings;
     if (spec.project) body.project = spec.project;
     var r = await raw(withTeam('/v13/deployments?skipAutoDetectionConfirmation=1', c), { body: body }, c.token);
-    if (!r.ok) return { ok: false, stage: 'deploy', status: r.status, error: r.body && r.body.error };
+    // missing_files: Vercel does not hold some fingerprints yet (a new account,
+    // or a support file that changed with a kit release). Files named in
+    // spec.sources have a public copy with the same bytes (the shared
+    // library): fetch it, check its SHA-1, upload it, and deploy again — so
+    // this no longer needs a second pass through the chat.
+    var uploaded = [];
+    if (!r.ok && r.body && r.body.error && r.body.error.code === 'missing_files') {
+      var missing = r.body.error.missing || [];
+      var names = files.filter(function (f) { return f.sha && missing.indexOf(f.sha) >= 0; }).map(function (f) { return f.file; });
+      var src = spec.sources || {};
+      var unresolved = names.filter(function (n) { return !src[n]; });
+      if (unresolved.length) return { ok: false, stage: 'missing_files', missingFiles: unresolved, missing: missing };
+      for (var k = 0; k < names.length; k++) {
+        var want = files.filter(function (f) { return f.file === names[k]; })[0];
+        var up = await uploadFrom(src[names[k]], want.sha, c);
+        if (!up.ok) return { ok: false, stage: 'missing_files', file: names[k], reason: up.reason, missingFiles: names };
+        uploaded.push(names[k]);
+      }
+      r = await raw(withTeam('/v13/deployments?skipAutoDetectionConfirmation=1', c), { body: body }, c.token);
+    }
+    if (!r.ok) return { ok: false, stage: 'deploy', status: r.status, error: r.body && r.body.error,
+                        missingFiles: (r.body && r.body.error && r.body.error.code === 'missing_files')
+                          ? files.filter(function (f) { return f.sha && (r.body.error.missing || []).indexOf(f.sha) >= 0; }).map(function (f) { return f.file; })
+                          : undefined };
     var id = r.body.id, j = r.body;
     for (var n = 0; n < 60 && ['READY', 'ERROR', 'CANCELED'].indexOf(j.readyState) < 0; n++) {
       await sleep(3000);
@@ -156,28 +247,23 @@ window.KV = (function () {
       if (s.ok) j = s.body;
     }
     return { ok: j.readyState === 'READY', id: id, readyState: j.readyState, projectId: j.projectId,
-             alias: j.alias || [], url: j.url, error: j.errorMessage || null };
+             alias: j.alias || [], url: j.url, error: j.errorMessage || null, uploaded: uploaded };
   }
 
-  // Blob store for play history, created and connected in one call.
-  async function createStore(name, projectId) {
-    var r = await api('/v1/storage/stores/blob', { body: { name: name, access: 'private', region: 'lhr1', projectId: projectId } });
-    var env = await api('/v10/projects/' + projectId + '/env');
-    var keys = ((env.ok && env.body.envs) || []).map(function (e) { return e.key; });
-    return { ok: r.ok, status: r.status, storeId: r.ok ? r.body.store.id : null,
-             tokenSet: keys.indexOf('BLOB_READ_WRITE_TOKEN') >= 0, error: r.ok ? null : r.body && r.body.error };
+  // Fetch a public file, check it is the bytes Vercel is asking for, and
+  // upload it so a deploy can reference it by fingerprint.
+  async function uploadFrom(url, sha, c) {
+    var g = await fetch(url, { cache: 'no-store' });
+    if (!g.ok) return { ok: false, reason: 'could not read ' + url + ' (' + g.status + ')' };
+    var buf = await g.arrayBuffer();
+    if ((await sha1(buf)) !== sha) return { ok: false, reason: url + ' does not match the fingerprint' };
+    var u = await fetch(withTeam('/v2/files', c), { method: 'POST', body: buf,
+      headers: { Authorization: 'Bearer ' + c.token, 'Content-Type': 'application/octet-stream', 'x-vercel-digest': sha } });
+    return { ok: u.ok, reason: u.ok ? null : 'upload refused (' + u.status + ')' };
   }
+  K.deploy = deploy; K.uploadFrom = uploadFrom;
+  /* @end-part */
 
-  // Short history of a project's publishes.
-  async function deployments(projectId, limit) {
-    var r = await api('/v6/deployments?projectId=' + projectId + '&limit=' + (limit || 5));
-    return (r.ok ? r.body.deployments : []).map(function (d) {
-      return { id: d.uid, url: d.url, target: d.target, state: d.state, created: new Date(d.created).toISOString() };
-    });
-  }
-
-  return { status: status, check: check, setupBox: setupBox, forget: forget, api: api, sha1: sha1,
-           ensureProject: ensureProject, deploy: deploy, createStore: createStore, deployments: deployments,
-           setupResult: null, version: VERSION };
+  return K;
 })();
 'KV ready — ' + JSON.stringify(window.KV.status());

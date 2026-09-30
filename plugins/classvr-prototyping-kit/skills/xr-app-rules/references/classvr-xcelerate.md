@@ -158,7 +158,7 @@ own menu has "Toggle passthrough" (available in kiosk mode too).
   "Microphone" (ask once at load, keep the stream).
 
 - Controllers report as `meta-touch`; VR enter/exit, flags and 72 fps all
-  read back through the logbook (Logbook Test build 2, 8 Sep 2026).
+  read back through the kit's diary (Logbook Test build 2, 8 Sep 2026).
 - **3DoF is simulated.** The device is 6DoF; a kit app with `dof: 3` throws
   positional tracking away itself. The real ClassVR 3DoF headsets do not run
   Wolvic, so this is the only device kit apps are tested on.

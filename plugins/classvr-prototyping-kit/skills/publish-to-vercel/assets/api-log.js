@@ -1,8 +1,7 @@
 // /api/log — the kit's diary receiver on Vercel.
 // kit-relay.js in the page POSTs a JSON envelope here. Every post is printed
 // as one line in the project's runtime log, tagged [kit-diary], at the level
-// the envelope asks for; the Vercel connector reads those lines back
-// (get_runtime_logs, query "kit-diary"; get_runtime_errors for the errors).
+// the envelope asks for (visible in the project's logs in the Vercel dashboard).
 // Runtime logs are kept for an hour on Hobby and a day on Pro, so the posts
 // marked `full` — one when the player leaves VR, one when the page closes —
 // are also written to Blob storage, one file per session, never rewritten.

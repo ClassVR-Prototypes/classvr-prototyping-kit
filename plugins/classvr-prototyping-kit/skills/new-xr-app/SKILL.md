@@ -39,6 +39,12 @@ Plus, when a concept was chosen (step 2), the first playable version of it.
 
 ## Steps
 
+### 0. Vercel connection — before anything else
+
+Run `/connect-vercel`'s **The check** first, before asking anything or
+building anything. Connected → carry on silently. Not connected → its setup
+script runs now, word for word, and this job resumes after its message **F**.
+
 ### 1. Get the app name
 
 Take it from the request ("make a new VR app called Planet Walk" → `Planet Walk`).
@@ -188,8 +194,12 @@ from the start position. If they aren't, move them, don't ship it.
 ### 7. Put it on a link
 
 Deliver the project files to the user's folder, then run `/publish-to-vercel`
-from its step 3 — the preview check is already done. It runs `/connect-vercel`
-first if the person has no Vercel connection yet.
+from its step 2, straight away in the same turn. Use `<staging>/<App Name>`
+as its `--from` folder — it is the same copy, so there is nothing to stage
+back — and add `--no-preview` to its first command (`prepare`, or `build`
+for an app already on Vercel), since the check above just passed. Leave the
+`.preview` folder out when delivering. The Vercel
+connection was already checked in step 0.
 
 Every app leaves this skill with a link recorded in `xr-project.json`.
 
@@ -233,13 +243,24 @@ It flips the `dof` flag on `<a-scene xr-kit>`, swaps the movement line in
 `KIT_CONTROLS.headset`, and updates `xr-project.json`. Then apply the 3DoF
 design rules from `xr-app-rules` to the content (anything that needed hands or
 walking must become look-and-select or come to the player), run the preview
-and share as after any edit. Apps made before v0.13 have no `#tracking` wrapper
+and publish as after any edit. Apps made before v0.13 have no `#tracking` wrapper
 and the script refuses; refresh their rig block from the template first.
+
+### Refreshing the kit's parts (`--refresh-kit`)
+
+    python3 ${CLAUDE_PLUGIN_ROOT}/skills/new-xr-app/scripts/scaffold.py \
+        --refresh-kit "<App>/index.html"
+
+Replaces the four kit-owned blocks (diary, panel style, `xr-kit`, status
+panel) with the current template's and leaves the app's own content, controls
+and checks alone. `xr-app-rules` runs it before the first edit of an app in a
+session.
 
 ### Physics
 
 If a request needs physics (things that fall, roll, bounce, get thrown), copy
 `${CLAUDE_PLUGIN_ROOT}/skills/new-xr-app/assets/cannon.iife.js` into the project
 folder and add `<script src="./cannon.iife.js"></script>` directly after the
-A-Frame script tag. Add `"cannon"` to `libraries` in `xr-project.json`. The
-publish step inlines every local script automatically.
+A-Frame script tag. Add `"cannon"` to `libraries` in `xr-project.json`. An
+app that uses it can't be published yet (see `xr-app-rules`, "Physics"), so
+prefer working the motion out from the formulas when that is enough.

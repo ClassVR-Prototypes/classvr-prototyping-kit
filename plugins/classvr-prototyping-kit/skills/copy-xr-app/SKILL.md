@@ -14,7 +14,7 @@ description: >
   their own. Nothing is needed from the person who made the original — no
   files sent, no account shared.
 metadata:
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Copy an XR app
@@ -59,8 +59,8 @@ folder's `xr-project.json`. Accepted:
 - any other address serving a single-file kit build (an older app)
 
 "Version 4 of …", "the one from Tuesday", "the version with the lap counter"
-→ the Vercel route with a version. Fetch `<address>/history.json`
-(`web_fetch_vercel_url`); it lists every version with its number, date, note
+→ the Vercel route with a version. Read `<address>/history.json` (step 2's
+browser tab); it lists every version with its number, date, note
 and `sha1`. Pick the one they mean (by number, date or note); if it is
 ambiguous, show the two or three candidates in a line each and ask which.
 Then the page to copy is `<address>/v/<N>/` and its expected fingerprint is
@@ -83,13 +83,29 @@ it in the browser pane.
 
 ### 2. Fetch the page
 
-- **`*.vercel.app`** → `web_fetch_vercel_url` (the cloud workspace cannot
-  reach Vercel directly).
-- **anything else** → `WebFetch`, or `curl` from the workspace; if the
-  workspace can't reach it, use the browser pane on the user's machine
-  (`get_page_text`) or ask them to paste the page.
+Vercel addresses are only reachable from Claude's built-in browser (neither
+workspace shell can reach them), so every Vercel file comes across through a
+browser tab:
 
-Save it as `<scratch>/published.html`.
+1. `preview_start` at the app's address (any page of it, so `fetch()` there is
+   same-origin), then for each file `javascript_tool`:
+   `var t = await (await fetch('<path>', {cache: 'no-store'})).text();` and
+   return `{ length: t.length, sha1: <SHA-1 of t via crypto.subtle>, part: t.slice(i, i + 20000) }`
+   — one 20 000-character piece per call, `i` = 0, 20000, 40000, …
+2. Write the pieces, joined in order, to the scratch file with the Write tool,
+   then check it: `sha1sum` must equal the `sha1` the browser gave. A mismatch
+   means a piece was copied wrongly — fetch that file again rather than
+   editing it. Files from another address (the shared library) are fetched
+   from a tab on that address the same way.
+3. Anything not on Vercel → `WebFetch`, or `curl` from the workspace; if the
+   workspace can't reach it, the browser tab again, or ask them to paste it.
+
+No built-in browser in this session (Cowork on the web) → say copying needs
+the Claude desktop app open, or point them at the app's `/history` page,
+whose **Make my own copy** button saves the folder without Claude (see "A
+folder from the history page").
+
+Save the page as `<scratch>/published.html`.
 
 ### 3. Work out what kind of page it is
 
@@ -117,7 +133,7 @@ From the meta's `lib` base and `kit` version, fetch four files into
     <lib>/xr-kit-<kit>.js
     <lib>/xr-kit-panel-<kit>.js
 
-Same fetch rule as step 2 (`web_fetch_vercel_url` for `*.vercel.app`). If any
+Same fetch rule as step 2 (a tab on `<lib>`, pieces, sha1 check). If any
 is missing, stop: the library that app was built against is gone, so its
 source cannot be rebuilt — offer to start a fresh app from the template
 instead.

@@ -1,8 +1,8 @@
 // /api/reports — the play history this app has kept.
 // Every session that reached VR or closed the page left one file in the
 // project's Blob store (written by /api/log). This reads them back, newest
-// first, long after Vercel's runtime log has rolled over. Fetch it through
-// the Vercel connector (web_fetch_vercel_url) — no browser needed.
+// first, long after Vercel's runtime log has rolled over. It is public: read
+// it in a browser tab on the app's address, no token needed.
 //
 //   /api/reports                     the most recent sessions, one line each
 //   /api/reports?limit=50            more of them (default 25, max 200)

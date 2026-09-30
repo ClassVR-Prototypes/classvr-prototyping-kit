@@ -376,8 +376,8 @@ scanner) and press **Enter VR**.
 
 {headset}
 
-On a computer: click the scene and move the mouse to look around; W A S D or
-the arrow keys move you.
+On a computer: right-click and drag to look around, left-click to press what
+the centre ring points at, W A S D to move and Q / E to turn.
 
 ## What's in it
 

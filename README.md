@@ -30,7 +30,7 @@ ask for a prototype.
 
 - A Vercel account (the free Hobby plan is enough to try it; staff use belongs
   on a Pro team). The kit walks you through connecting it once
-  (`/connect-vercel`); no connector needed.
+  (`/connect-vercel`); nothing else to install.
 - Nothing else. A-Frame and cannon-es are bundled inside the plugin (apps that
   use cannon-es can't be published yet).
 
@@ -44,7 +44,7 @@ bump is what tells them something changed.
 
 ## Status
 
-Version 0.36.0, September 2026: Claude Cowork only, published to Vercel only.
+Version 0.40.0, September 2026: Claude Cowork only, published to Vercel only.
 Built and tested against the ClassVR Xcelerate headset (Wolvic browser).
 Prototypes made with the kit are ordinary HTML pages on the person's own
 Vercel account, each with a version history and a QR code for the headset.

@@ -119,6 +119,14 @@ HISTORY_JSON = 'history.json'
 LIB_RELAY = 'kit-relay-%s.js'
 LIB_QR = 'kit-qr-%s.js'
 LIB_HISTORY = 'history-%s.html'
+LIB_ABOUT = 'about-%s.html'            # the "About this app" page (kit 0.39)
+# the app's fixed support files, also kept in the library under versioned
+# names: the bridge uploads them from there when Vercel does not hold their
+# fingerprint yet (a new account, or a kit update), so that never needs a
+# second pass through the chat. (deploy path, asset file, library name)
+LIB_SUPPORT = [('api/log.js', 'api-log.js', 'api-log-%s.js'),
+               ('api/reports.js', 'api-reports.js', 'api-reports-%s.js'),
+               ('package.json', 'package.json', 'package-%s.json')]
 
 
 def now_iso():
@@ -403,17 +411,20 @@ def build(a):
     diary_js = stamp(stamp(diary.group(1), 'BUILD_PROBE', '0'), 'BUILD_LIB_LINES', '[]')
     # the panel names the app as a literal in the template; shared, it must
     # read the page title instead (the one line the template should adopt)
-    panel_js = re.sub(r"'<b>[^<']*</b>", "'<b>' + document.title + '</b>", panel.group(1), count=1)
+    panel_js = re.sub(r"'<b>(?:[^<'\\]|\\.)*</b>", "'<b>' + document.title + '</b>", panel.group(1), count=1)
     panel_js = panel_js.replace('(bundled)', '(shared library)')
     # version = hash of the plumbing AFTER normalising, so every app made from
     # the same template gets the same library whatever it is called
     relay_js = open(os.path.join(ASSETS, 'kit-relay.js'), encoding='utf-8').read()
     qr_js = open(os.path.join(ASSETS, 'kit-qr.js'), encoding='utf-8').read()
     viewer_html = history_viewer()
+    about_html = open(os.path.join(ASSETS, 'kit-about.html'), encoding='utf-8').read()
+    support = [(dp, open(os.path.join(ASSETS, asset), encoding='utf-8').read(), libname) for dp, asset, libname in LIB_SUPPORT]
     v = a.kit_version
     if v == 'auto':
         v = hashlib.sha256((diary_js + style.group(1) + xrkit.group(1) + panel_js
-                            + relay_js + qr_js + viewer_html).encode('utf-8')).hexdigest()[:12]
+                            + relay_js + qr_js + viewer_html + about_html
+                            + ''.join(t for _, t, _ in support)).encode('utf-8')).hexdigest()[:12]
     lib = {
         'xr-kit-diary-%s.js' % v: diary_js.strip('\n') + '\n',
         'xr-kit-%s.css' % v: style.group(1).strip('\n') + '\n',
@@ -422,17 +433,31 @@ def build(a):
         LIB_RELAY % v: relay_js,
         LIB_QR % v: qr_js,
         LIB_HISTORY % v: viewer_html,
+        LIB_ABOUT % v: about_html,
         # the library project's own settings and front page, so lib/ can be
         # deployed (or dropped) as it stands
         'vercel.json': open(os.path.join(ASSETS, 'vercel-lib.json'), encoding='utf-8').read(),
         'index.html': '<!DOCTYPE html><title>xr-kit library %s</title><p>ClassVR Prototyping Kit library %s.</p>\n' % (v, v),
     }
+    for _, text, libname in support:
+        lib[libname % v] = text
     for name, text in lib.items():
         open(os.path.join(out, 'lib', name), 'w', encoding='utf-8', newline='\n').write(text)
+    L = (a.lib_base or 'https://xr-kit-lib-%s.vercel.app' % v).rstrip('/')
+    if a.library_only:
+        # just the library and its address: what a first publish
+        # needs before the app's address is known (publish_prep.py prepare)
+        lm = {'kit': v, 'aframe': a.aframe, 'libBase': L, 'slug': slug, 'libraryOnly': True,
+              'libDeploy': sorted(lib), 'files': {}}
+        for name, text in lib.items():
+            s1, n = sha1_bytes(text)
+            lm['files']['lib/' + name] = {'bytes': n, 'sha256': hashlib.sha256(text.encode('utf-8')).hexdigest(), 'sha1': s1}
+        json.dump(lm, open(os.path.join(out, 'manifest.json'), 'w', encoding='utf-8'), indent=2)
+        print('library %s at %s' % (v, L))
+        return lm
 
     # 3. the slim page: replace each block with a reference, in reverse order
     #    so earlier offsets stay valid
-    L = (a.lib_base or 'https://xr-kit-lib-%s.vercel.app' % v).rstrip('/')
     page = src
     page = page[:panel.start()] + '<script src="%s/xr-kit-panel-%s.js"></script>' % (L, v) + page[panel.end():]
     page = page[:xrkit.start()] + '<script src="%s/xr-kit-%s.js"></script>' % (L, v) + page[xrkit.end():]
@@ -513,7 +538,7 @@ def build(a):
             dest = os.path.join(out, 'page', name)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             open(dest, 'w', encoding='utf-8', newline='\n').write(deploy[name])
-        # older versions: the connector sends them by fingerprint, but a folder
+        # older versions: the deploy sends them by fingerprint, but a folder
         # someone drops into the Vercel dashboard must hold the bytes, so copy
         # each one from the app's versions/ folder when its fingerprint matches
         missing_old = []
@@ -534,19 +559,13 @@ def build(a):
         if missing_old:
             print('not in the app folder (the page/ folder alone would drop them): version%s %s'
                   % ('' if len(missing_old) == 1 else 's', ', '.join(map(str, missing_old))))
-    # the readable about/ page (README + changelog)
-    if app_docs.get('readme') or app_docs.get('changelog'):
-        deploy['about/index.html'] = appdocs.about_page(manifest.get('name'), app_docs.get('readme'),
-                                                        app_docs.get('changelog'), link_url, build_no)
-        for name in ('about/index.html',):
-            if name in deploy:
-                dest = os.path.join(out, 'page', name)
-                os.makedirs(os.path.dirname(dest), exist_ok=True)
-                open(dest, 'w', encoding='utf-8', newline='\n').write(deploy[name])
+    # the readable about/ page (README + changelog): since kit 0.39 a redirect
+    # to the library's about page, which reads both from inside the page —
+    # nothing about it travels with the publish (see vercel.json below)
+    has_docs = bool(app_docs.get('readme') or app_docs.get('changelog'))
     fixed = []
     if not a.no_relay:
-        fixed += [('api/log.js', 'api-log.js'), ('api/reports.js', 'api-reports.js'),
-                  ('package.json', 'package.json')]
+        fixed += [(dp, asset) for dp, asset, _ in LIB_SUPPORT]
     # vercel.json: the noindex header (unless --indexable) and /history ->
     # the library's viewer for this app. Per app, so it is sent inline.
     vj = json.load(open(os.path.join(ASSETS, 'vercel-app.json'), encoding='utf-8')) if not a.indexable else {}
@@ -565,12 +584,18 @@ def build(a):
         vj['rewrites'] = [{'source': cur_dir, 'destination': '/index.html'},
                           {'source': cur_dir + '/', 'destination': '/index.html'},
                           {'source': cur_dir + '/index.html', 'destination': '/index.html'}]
+        if has_docs:
+            about_url = '%s/%s' % (L, LIB_ABOUT % v) + ('?app=%s' % app_url.rstrip('/') if app_url else '')
+            vj['redirects'] += [{'source': '/about', 'destination': about_url, 'permanent': False},
+                                {'source': '/about/', 'destination': about_url, 'permanent': False},
+                                {'source': '/about/index.html', 'destination': about_url, 'permanent': False}]
         if any(old['version'] != build_no for old in versions):
             vj['redirects'] += [
                 {'source': '/kit-relay.js', 'destination': '%s/%s' % (L, LIB_RELAY % v), 'permanent': False},
                 {'source': '/kit-qr.js', 'destination': '%s/%s' % (L, LIB_QR % v), 'permanent': False}]
     if vj:
-        text = json.dumps(vj, indent=2) + '\n'
+        # compact: it is sent inline on every publish (kit 0.39)
+        text = json.dumps(vj, separators=(',', ':')) + '\n'
         open(os.path.join(out, 'page', 'vercel.json'), 'w', encoding='utf-8', newline='\n').write(text)
         deploy['vercel.json'] = text
     for name, asset in fixed:
@@ -583,6 +608,8 @@ def build(a):
     # 5. report + a manifest a publish step can verify the hosted copies against
     def kb(s): return '%.1f KB' % (len(s.encode('utf-8')) / 1024)
     out_man = {'kit': v, 'aframe': a.aframe, 'libBase': L, 'build': build_no, 'slug': slug,
+               'url': app_url.rstrip('/') if app_url else None, 'about': has_docs and not a.no_history,
+               'sources': {dp: '%s/%s' % (L, libname % v) for dp, _, libname in LIB_SUPPORT if not a.no_relay},
                'extraLibs': extra_libs, 'noindex': not a.indexable, 'qrUrl': qr_url, 'files': {}}
     print('source page    ', kb(src))
     for name, text in lib.items():
@@ -600,7 +627,7 @@ def build(a):
     # so a file new in this publish cannot be sent by sha — verified 22 Sep);
     # history.json and the history page change too; everything else is
     # byte-identical across publishes and goes by sha after the first time
-    inline_names = {'index.html', HISTORY_JSON, 'vercel.json', 'about/index.html'}
+    inline_names = {'index.html', HISTORY_JSON, 'vercel.json'}
     for name in sorted(deploy):
         text = deploy[name]
         s1, n = sha1_bytes(text)
@@ -735,6 +762,8 @@ def main():
                     help="library version label; 'auto' = 12-hex hash of the extracted plumbing, so any app maps to exactly the files built from its own template")
     ap.add_argument('--aframe', default='auto', help="A-Frame release to load from aframe.io; 'auto' reads it from the app's bundled aframe.min.js")
     ap.add_argument('--out', default=None)
+    ap.add_argument('--library-only', action='store_true',
+                    help='write only lib/ and a small manifest (kit, libBase) — the project is not touched')
     ap.add_argument('--url', default=None, help="the app's public address for the on-page QR code (default: vercel.url in xr-project.json)")
     ap.add_argument('--no-qr', action='store_true', help='leave out the on-page QR code')
     ap.add_argument('--no-relay', action='store_true', help='leave out kit-relay.js and the api/ functions (static page only)')

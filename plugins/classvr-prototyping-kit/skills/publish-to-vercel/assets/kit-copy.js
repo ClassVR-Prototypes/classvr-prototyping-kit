@@ -184,10 +184,6 @@
       build: 1,
       sourceHash: null,
       libraries: libs,
-      classcloud: { organizationId: null, playlistId: null, playlistName: 'XR Prototypes', activityId: null,
-                    lastPublished: null, lastUrl: null, qrPayload: null },
-      artifact: { url: null, owner: null, build: null, lastShared: null },
-      pages: { url: null, repo: null, build: null, lastShared: null },
       forkedFrom: fork
     };
   }
