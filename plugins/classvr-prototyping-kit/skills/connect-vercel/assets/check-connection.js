@@ -1,4 +1,4 @@
-/* ClassVR Prototyping Kit — Vercel connection check (kit 0.40.0).
+/* ClassVR Prototyping Kit — Vercel connection check (kit 0.40.1).
  * Run with javascript_tool on a tab at https://api.vercel.com/v2/user, pasted
  * verbatim. Returns only a state and the username — never the token.
  *   connected      → { state, username }
@@ -8,6 +8,14 @@
  */
 await (async function () {
   if (location.origin !== 'https://api.vercel.com') return { state: 'wrong-page' };
+  if (document.body && !document.getElementById('kv-cover')) {   // hide Vercel's raw reply behind a calm card
+    var d = document.createElement('div'); d.id = 'kv-cover';
+    d.innerHTML = '<div style="position:fixed;inset:0;background:#f4f6f8;display:flex;align-items:center;justify-content:center;font:16px/1.45 system-ui,Segoe UI,sans-serif;z-index:99998;color:#1e1e1e">'
+      + '<div style="background:#fff;border:1px solid #dde2e8;border-radius:12px;padding:28px;max-width:440px;width:calc(100% - 32px);box-shadow:0 6px 24px rgba(0,0,0,.08)">'
+      + '<h1 style="font-size:20px;margin:0 0 8px">Claude is connecting to Vercel</h1>'
+      + '<p style="margin:0;color:#555">Claude uses this tab to publish your apps. You don’t need to do anything here — you can go back to the chat.</p></div></div>';
+    document.body.appendChild(d);
+  }
   var c = null;
   try { c = JSON.parse(localStorage.getItem('classvr-kit.vercel') || 'null'); } catch (e) { c = null; }
   if (!c || !c.token) return { state: 'not-connected' };

@@ -1,4 +1,4 @@
-/* ClassVR Prototyping Kit — Vercel bridge (kit 0.39.1, bridge 3).
+/* ClassVR Prototyping Kit — Vercel bridge (kit 0.40.1, bridge 4).
  *
  * Run in the built-in browser pane on a page of https://api.vercel.com (open
  * https://api.vercel.com/v2/user first — same origin, so no CORS and the token
@@ -21,7 +21,7 @@
 window.KV = (function () {
   'use strict';
   var KEY = 'classvr-kit.vercel';
-  var VERSION = 3;
+  var VERSION = 4;
   var K = { setupResult: null, version: VERSION };
 
   function cfg() { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { return null; } }
@@ -71,6 +71,22 @@ window.KV = (function () {
              savedAt: c.savedAt, tokenEnds: c.token.slice(-4), bridge: VERSION };
   }
   K.status = status; K.api = api; K.sha1 = sha1;
+
+  // The tab's own page is Vercel's raw "missing authentication token" reply,
+  // which looks alarming in the browser panel. Cover it with a calm card.
+  function cover() {
+    if (!onVercelApi() || !document.body || document.getElementById('kv-cover')) return;
+    var d = document.createElement('div'); d.id = 'kv-cover';
+    d.innerHTML =
+      '<style>#kv-cover{position:fixed;inset:0;background:#f4f6f8;display:flex;align-items:center;justify-content:center;font:16px/1.45 system-ui,Segoe UI,sans-serif;z-index:99998;color:#1e1e1e}' +
+      '#kv-cover .c{background:#fff;border:1px solid #dde2e8;border-radius:12px;padding:28px;max-width:440px;width:calc(100% - 32px);box-shadow:0 6px 24px rgba(0,0,0,.08)}' +
+      '#kv-cover h1{font-size:20px;margin:0 0 8px}#kv-cover p{margin:0;color:#555}</style>' +
+      '<div class="c"><h1>Claude is connecting to Vercel</h1>' +
+      '<p>Claude uses this tab to publish your apps. You don’t need to do anything here — you can go back to the chat.</p></div>';
+    document.body.appendChild(d);
+  }
+  cover();
+  K.cover = cover;
 
   /* @setup-only */
   // Check the stored token still works (expired / revoked tokens show up here).

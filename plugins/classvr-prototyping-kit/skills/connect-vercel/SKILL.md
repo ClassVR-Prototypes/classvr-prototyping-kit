@@ -13,7 +13,7 @@ description: >
   check that every Vercel job runs first, and a word-for-word setup script so
   every person gets the same steps in the same words.
 metadata:
-  version: "0.3.0"
+  version: "0.3.1"
 ---
 
 # Connect Vercel
@@ -92,13 +92,23 @@ the person unless it finds a problem.
 2. Open a tab at `https://api.vercel.com/v2/user` (`preview_start`; reuse a
    tab already there) and run the full text of
    `${CLAUDE_PLUGIN_ROOT}/skills/connect-vercel/assets/check-connection.js`
-   with `javascript_tool`, verbatim. It returns `state`:
+   with `javascript_tool`, verbatim, **as the very next call** after the tab
+   opens — it also covers Vercel's raw "missing authentication token" reply
+   with a calm "Claude is connecting to Vercel" card, so the person never
+   sees it for more than a moment. It returns `state`:
    - `connected` → say nothing about Vercel; carry on with the job.
    - `not-connected` → **Setup**, from turn 1.
    - `refused` → **Setup**, from turn 1 with message **M1r** and no account
      question (they have an account).
 
 Remember the job the person asked for; it resumes after message **F**.
+
+**The box tab is always covered.** Whenever that tab is opened or reloaded
+(`preview_start`, `navigate`), the next call on it is the check or a script
+that carries the bridge — both draw the card first. Never leave it showing
+Vercel's raw reply, and never try to hide the browser panel instead: the tab
+must stay open for Claude to reach Vercel, and whether the panel shows is the
+person's choice.
 
 ## Setup — the script
 
@@ -231,7 +241,7 @@ It looks like you're not signed in to Vercel yet. Finish signing in in the brows
 I've opened Vercel's **Tokens** page in the browser panel. A token is a private key that lets me publish your apps for you. To make one:
 
 1. Under **Create Token**, click the **New Token** box and type **ClassVR Prototyping Kit**.
-2. Click **Select scope** and choose the one with your name.
+2. Click **Select scope**, choose the one with your name, then choose **all-projects**.
 3. Click **Select Date** and choose **1 Year**.
 4. Click **Create**.
 5. Copy the token that appears. If Copy to Clipboard says it failed, highlight the token and press Ctrl+C instead.
@@ -262,7 +272,7 @@ When you've copied it, type **done**.
 
 **S** — wrong scope
 ~~~
-That token can't reach your projects, because its scope isn't set to your own account. I've switched back to the Vercel tab. Make a new token, and under **Select scope** choose the one with your name.
+That token can't reach your projects, because its scope isn't set to your own account. I've switched back to the Vercel tab. Make a new token, and under **Select scope** choose the one with your name, then **all-projects**.
 
 When you've copied it, type **done**.
 ~~~
