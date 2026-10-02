@@ -41,7 +41,10 @@ def apply_dof(html, dof):
     if '{{DOF}}' in html:
         html = html.replace('{{DOF}}', str(dof))
     else:
-        html = _re.sub(r'<a-scene xr-kit(="dof:\s*\d")?', '<a-scene xr-kit="dof: %d"' % dof, html, count=1)
+        # The real tag starts its own line; a kit comment also mentions
+        # '<a-scene xr-kit="dof: N">' and must not be touched (it once was,
+        # which left the real tag unchanged and altered the kit's own code).
+        html = _re.sub(r'(?m)^<a-scene xr-kit(="dof:\s*\d")?', '<a-scene xr-kit="dof: %d"' % dof, html, count=1)
     if '{{HEADSET_CONTROLS}}' in html:
         html = html.replace('{{HEADSET_CONTROLS}}', HEADSET_CONTROLS[dof])
     else:

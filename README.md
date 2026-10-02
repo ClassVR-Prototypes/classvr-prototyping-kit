@@ -44,7 +44,7 @@ bump is what tells them something changed.
 
 ## Status
 
-Version 0.40.1, September 2026: Claude Cowork only, published to Vercel only.
+Version 0.50.1, October 2026: Claude Cowork only, published to Vercel only.
 Built and tested against the ClassVR Xcelerate headset (Wolvic browser).
 Prototypes made with the kit are ordinary HTML pages on the person's own
 Vercel account, each with a version history and a QR code for the headset.

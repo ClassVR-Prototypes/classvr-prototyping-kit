@@ -14,7 +14,7 @@ description: >
   "go back to version 4", "call this version …" and "what's the fingerprint of
   this version".
 metadata:
-  version: "0.14.1"
+  version: "0.15.2"
 ---
 
 # Publish to Vercel
@@ -112,6 +112,17 @@ at that step; the error text says which case it is:
 
 ## Steps
 
+**Progress updates.** A publish takes a couple of
+minutes. Run on its own ("publish my app", "go back to version 2"), send
+**2–3** plain progress updates following `${CLAUDE_PLUGIN_ROOT}/skills/new-xr-app/references/progress-updates.md` (read it first; each one a
+`SendUserMessage` call, made alongside the step's own first call): a starting
+update once the check says connected, **uploading to Vercel** with step 4's deploy,
+and optionally the **live check** with the live check. For example:
+"Uploading <app> to Vercel", "It's on Vercel. Opening the live link to check
+it works there". When
+this runs as the end of `/new-xr-app` or an edit, that job sends the upload
+and live-check updates as part of its own count — none extra here. Problems the person must know about are said plainly.
+
 A publish is **five calls** after the first (seven on a first publish). Use a
 fresh scratch folder for each publish — `<scratch>` below, e.g.
 `/tmp/publish-<slug>-<time>` — and set `P=${CLAUDE_PLUGIN_ROOT}/skills/publish-to-vercel/scripts`.
@@ -119,9 +130,9 @@ fresh scratch folder for each publish — `<scratch>` below, e.g.
 ### Before step 0 — the Vercel connection
 
 Run `/connect-vercel`'s **The check** before anything else in the job —
-unless `/new-xr-app` or an edit already ran it this turn. Connected → carry on
-silently. Not connected → its setup script runs now, word for word, and the
-publish resumes after its message **F**. Never start staging or building
+unless `/new-xr-app` or an edit already ran it this turn. Connected → say nothing
+about Vercel. Not connected → its setup script runs now, word for word, and the
+publish resumes after its message **F**, then the starting update. Never start staging or building
 first and discover the missing connection later.
 
 ### 0. If the app does not exist yet
@@ -227,7 +238,7 @@ plainly: it can't be put on a headset for now.
 
 ### 4. Deploy and check it live — one call
 
-One browser batch, four steps (or the same four as separate calls, one after
+One browser batch, five steps (or the same five as separate calls, one after
 another — either is fine; separate calls avoid escaping a long script twice):
 
 1. `navigate` → `https://api.vercel.com/v2/user`
@@ -241,7 +252,18 @@ another — either is fine; separate calls avoid escaping a long script twice):
    are right, `/v/<N>/` is the same page, `history.json` lists every version,
    one older version still plays, `/history` and `/about/` redirect). It leaves out the
    "player can walk forward" self-check, which can't pass in the pane
-   (synthetic keys); step 3 covered it.
+   (synthetic keys); step 3 covered it. A **hidden browser panel** draws no
+   frames, so in-scene self-checks fail there (even the kit's own): the live
+   check runs failed checks once more if the page is visible now, and skips
+   them (`selfChecks` says so) if it is still hidden — never ask the person to
+   show the panel for this. Keep the app's tab in front (`tabs_select`) before
+   the live check so the second run can draw.
+5. `navigate` → the summary's `url` (the plain link). Always — if the batch
+   stopped at a failed live check, make this call on its own. On `?kitcheck` the self-checks run by themselves 2.5 s
+   after load — they walk the player forward and play the app — so a person
+   who looks at or reloads that tab sees the rig slide and the game play
+   itself. The live check also takes `?kitcheck` off the address once it has
+   run, but the fresh load is what leaves the app as a player finds it.
 
 Step 2's result has `id`, `projectId`, `teamId` and `live`. Always
 `production` (preview deploys sit behind a Vercel login a headset cannot
@@ -281,7 +303,7 @@ and send it (`SendUserFile`, then `device_commit_files` beside the app).
 Nothing is rendered: **the URL is the last line of the reply, on its own
 line**, so the person can click it straight away.
 
-One or two sentences, in the kit's voice: the app name, that **version N** is
+This is the closing reply, not a progress update. One or two sentences, in the kit's voice: the app name, that **version N** is
 live ("saved as version 3 — added a lap counter"), open the address in any
 browser; for a headset, click the QR code in the page's top-right corner to
 enlarge it, scan it with the ClassVR scanner and press the VR button. First

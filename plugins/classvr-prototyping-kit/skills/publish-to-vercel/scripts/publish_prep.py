@@ -36,6 +36,9 @@ KITCHECK = """await (async () => {
   const C = __CHECK__;
   for (let i = 0; i < 40 && !(window.KIT && window.KIT.checkResults); i++) await new Promise(r => setTimeout(r, 500));
   if (!window.KIT) throw new Error('live check failed: the page did not start the kit');
+  // the self-checks have run (they walk the player forward and play the game):
+  // take ?kitcheck off the address so a reload of this tab doesn't run them again
+  try { history.replaceState(history.state, '', location.pathname + location.hash); } catch (e) {}
   const rep = KIT.report(), c = KIT.checkResults || [], problems = [];
   const get = p => fetch(p, {cache: 'no-store'}).then(async r => ({status: r.status, text: await r.text()}), () => ({status: 0, text: ''}));
   const res = {build: window.BUILD, scene: !!(document.querySelector('a-scene') || {}).hasLoaded,
@@ -43,6 +46,17 @@ KITCHECK = """await (async () => {
                firstError: (rep.errorList || [])[0] || null, qr: !!document.getElementById('kit-qr'),
                // the walk-forward check uses synthetic keys, which the pane does not deliver
                failed: c.filter(x => x && x.ok === false && x.name !== 'the player can walk forward').map(x => x.name + (x.detail ? ' - ' + x.detail : ''))};
+  // A hidden browser panel draws no frames, so the in-scene self-checks cannot
+  // pass while it is hidden (seen 2 Oct 2026, even the kit's own). If any
+  // failed: run them once more now if the page is visible (they may have run
+  // while it was hidden); if it is still hidden, skip them — they already
+  // passed in the build's test run.
+  const notWalk = x => x && x.ok === false && x.name !== 'the player can walk forward';
+  if (res.failed.length) {
+    if (document.hidden) { res.selfChecks = 'skipped: the browser panel is hidden, so the page draws no frames'; res.failed = []; }
+    else if (KIT.runChecks) { const again = await KIT.runChecks(); res.selfChecks = 'ran again with the panel showing';
+      res.failed = (again || []).filter(notWalk).map(x => x.name + (x.detail ? ' - ' + x.detail : '')); }
+  }
   if (res.build !== C.build) problems.push('the page is not version ' + C.build);
   if (!res.scene) problems.push('the scene did not load');
   if (!res.enterVR) problems.push('no Enter VR button');

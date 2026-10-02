@@ -12,7 +12,7 @@
       "source": "./plugins/classvr-prototyping-kit",
       "displayName": "ClassVR Prototyping Kit",
       "description": "Create a working WebXR scene in Claude Cowork, publish it to a permanent Vercel link that opens on a ClassVR headset from its own QR code, keep every version, and copy someone else's prototype from its address — no terminal, no libraries to install.",
-      "version": "0.40.1",
+      "version": "0.50.1",
       "author": {
         "name": "Avantis — Project Ptah"
       },

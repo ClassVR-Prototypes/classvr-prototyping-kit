@@ -14,7 +14,7 @@ description: >
   their own. Nothing is needed from the person who made the original — no
   files sent, no account shared.
 metadata:
-  version: "0.8.0"
+  version: "0.9.2"
 ---
 
 # Copy an XR app
@@ -48,6 +48,15 @@ numbers, their publish. The original is untouched and cannot be affected.
 - A passing preview, and the app's link if they want it published
 
 ## Steps
+
+**Progress updates.** Send **4–6** short updates, each its
+own `SendUserMessage` call made alongside that step's first real tool call, following `${CLAUDE_PLUGIN_ROOT}/skills/new-xr-app/references/progress-updates.md` (read it first;
+load `SendUserMessage` with ToolSearch if it is deferred): **starting** once
+the address is known → **downloading the original from its Vercel page**
+(step 2) → **rebuilding it as their own copy** (step 5) → **test run** in a
+browser (step 7), plus **uploading to Vercel** and the **live check** if they
+then ask for it to be published. Each update says plainly what is happening and what stage the copy is at. Step 8 is the
+closing reply, not an update; anything the person must know is said plainly.
 
 ### 1. Get the address
 

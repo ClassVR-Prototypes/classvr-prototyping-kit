@@ -13,7 +13,7 @@ description: >
   check that every Vercel job runs first, and a word-for-word setup script so
   every person gets the same steps in the same words.
 metadata:
-  version: "0.3.1"
+  version: "0.5.1"
 ---
 
 # Connect Vercel
@@ -97,9 +97,11 @@ the person unless it finds a problem.
    with a calm "Claude is connecting to Vercel" card, so the person never
    sees it for more than a moment. It returns `state`:
    - `connected` → say nothing about Vercel; carry on with the job.
-   - `not-connected` → **Setup**, from turn 1.
-   - `refused` → **Setup**, from turn 1 with message **M1r** and no account
-     question (they have an account).
+   - `not-connected` → **Setup**, from step 1.
+   - `refused` → **Setup**, from step 1 with message **M1r**. This includes
+     a token that still signs in but can no longer reach the projects (since
+     0.49: on 2 Oct 2026 the check said connected and the publish was then
+     refused with 403 "re-authenticate to this scope").
 
 Remember the job the person asked for; it resumes after message **F**.
 
@@ -112,76 +114,74 @@ person's choice.
 
 ## Setup — the script
 
-Every person gets the same setup, in the same order, in the same words.
+Every person gets the same setup, in the same order, in the same words. It
+has two steps: **make the token** in the person's own web browser, from a link
+in the chat, then **paste it** into a box in Claude's browser panel.
+
+Why split it this way (tested 1 Oct): signing up and signing in to Vercel can
+fail inside Claude's browser panel (pop-ups, robot checks), and Vercel's Copy
+button doesn't work there, while both work in the person's own browser. A link
+in the chat opens there: the app asks "Open External Link", they choose
+**Open**. A Tokens-page link sends a signed-out person to Vercel's sign-in
+first, then straight back to the Tokens page, so one link covers both. The
+paste must still happen in the panel, because the token is kept in Claude's
+browser, where the kit uses it.
 
 **How to send the messages.** Each message below is sent **word for word**:
 the text inside its block, exactly, without the block's fence — no words
 added before or after it, none changed, nothing reworded, summarised or
-"improved", even if you would phrase it better. The one placeholder is
-`{username}` in **F** and **A**. A message that ends a turn is the whole
-reply for that turn. A message sent while the turn carries on (**M1**, **F**)
-goes out with `SendUserMessage` — plain text between tool calls is shortened
-before the person sees it, so it would not arrive word for word.
+"improved", even if you would phrase it better. Keep links exactly as written.
+The one placeholder is `{username}` in **F** and **A**. A message that ends a
+turn is the whole reply for that turn. **F** is sent while the turn carries on,
+so it goes out with `SendUserMessage` — plain text between tool calls is
+shortened before the person sees it, so it would not arrive word for word.
 
 **One step per turn.** After each step's message, stop and wait for the person
-to reply. Anything meaning "done" moves on to the next turn. If they ask a
-question or say something else instead, answer it in one or two plain
-sentences, then send the **same step's message again**, word for word. If they
-paste the token into the chat, do not repeat it or use it: reply with **X**,
-and the next "done" goes to turn 4.
+to reply. Anything meaning "done" moves on. If they ask a question or say
+something else instead, answer it in one or two plain sentences, then send the
+**same step's message again**, word for word. If they paste the token into the
+chat, do not repeat it or use it: reply with **X**; on "done", step 2.
 
-Before any message that asks them to do something in the browser panel, call
-`tabs_context`. Panel hidden or not open → reply with **H** instead; on their
-"done", check again and then send the step's message.
+Claude never opens Vercel's website in the browser panel during setup. The
+only tab used is the **box tab** (`https://api.vercel.com/v2/user`, the tab the
+check used). Before a message that points at the panel, call `tabs_context`
+and select the box tab (`tabs_select`); panel hidden or not open → reply with
+**H** instead, and on "done" check again and then send the step's message.
 
-Two tabs are used, and only these two: the **Vercel tab** (Vercel's own
-website) and the **box tab** (`https://api.vercel.com/v2/user`, the tab the
-check used). Whenever a message points them at one, select it first
-(`tabs_select`) so it is the one the panel shows.
+Every person already has a Vercel account before they use the kit, so there
+is no account question.
 
-### Turn 1 — introduce, ask, open Vercel
+### Step 1 — make the token (in their own browser)
 
-1. `SendUserMessage` with **M1** (or **M1r** when the token was refused).
-2. **Only after M1:** `AskUserQuestion` with exactly this — question
-   `Do you already have a Vercel account?`, header `Vercel`, not multi-select,
-   options:
-   - `Yes, I have one` — description `I'll open Vercel so you can sign in.`
-   - `No, not yet` — description `I'll open Vercel so you can make a free account.`
-   Anything typed instead: an answer meaning yes or no counts as that option;
-   otherwise ask the same question once more.
-3. Open the Vercel tab (`preview_start`): **Yes** (and after **M1r**) →
-   `https://vercel.com/login`; **No** → `https://vercel.com/signup`.
-4. Read the tab's address. Vercel moved it away from `/login` or `/signup`
-   (they are already signed in) → go straight to turn 2, step 1, in this same
-   turn — no sign-in message.
-5. Otherwise reply with **M2a** (Yes) or **M2b** (No). End the turn.
+Reply with **M1** (or **M1r** when the check said `refused`). End the turn.
 
-### Turn 2 — the token page
+They say they have no Vercel account → reply with **U**; on "done", step 1
+again (**M1**).
 
-1. Navigate the Vercel tab to `https://vercel.com/account/settings/tokens`
-   and read its address.
-2. It landed on a sign-in page → reply with **N**. End the turn; on "done",
-   repeat this turn.
-3. Otherwise reply with **T**. End the turn.
+### Step 2 — paste it into the box (in the browser panel)
 
-### Turn 3 — the box
-
-1. Select the box tab. Load the bridge (see "Loading the bridge": paste
+1. On the box tab, load the bridge (see "Loading the bridge": paste
    `vercel-bridge.js` verbatim), then run `KV.setupBox()`.
 2. Reply with **P**. End the turn.
 
-### Turn 4 — did it save?
+### Step 2, on "done" — did it save?
 
 Read `KV.setupResult.state` on the box tab (bridge gone because the tab
-reloaded → load it again; `KV.setupResult` null → treat as `waiting`):
+reloaded → load it again and redraw the box with `KV.setupBox()`;
+`KV.setupResult` null → treat as `waiting`):
 
 - `connected` → record the details (below), `SendUserMessage` with **F**,
-  then carry on with the job the person asked for. When connecting *was* the
+  then carry on with the job the person asked for — its next message is the
+  job's plain **starting** progress update (see that skill), so the person knows the build
+  has started. When connecting *was* the
   job, **F** is the whole reply.
-- `refused` → select the Vercel tab, reply with **R**; on "done", turn 3.
-- `no-projects` → select the Vercel tab, reply with **S**; on "done", turn 3.
-- `waiting` → reply with **W**; on "done", turn 4 again.
-- `error` → reply with **E**; on "done", turn 4 again.
+- `refused` → reply with **R**; on "done", check again.
+- `no-projects` → reply with **S**; on "done", check again.
+- `waiting` → reply with **W**; on "done", check again.
+- `error` → reply with **E**; on "done", check again.
+
+The box stays on the page after a refusal, so the person can paste a new
+token straight into it.
 
 **Record the details.** Add to the kit's settings file
 `<connected folder>/.classvr-kit.json` (create it if missing, keep any other
@@ -200,60 +200,50 @@ The check says `connected` and connecting was the whole request → reply with
 
 ## The messages
 
-**M1** — the introduction
+**M1** — introduce, then make the token
 ~~~
 Before we start, I need to connect to your Vercel account. Vercel is the free website that hosts your apps so they open on a headset. You only do this once on this computer, and it takes about five minutes.
+
+First, make a token — a private key that lets me publish your apps for you:
+
+1. Open **[Vercel's Tokens page](https://vercel.com/account/settings/tokens)**. If you're asked about opening an external link, choose **Open** — the page opens in your own web browser. If Vercel asks you to sign in, sign in with your Vercel account; you'll come straight back to the Tokens page.
+2. In the **Create Token** section, select the **New Token** text box and type a name for the token (for example, "ClassVR Prototyping Token").
+3. Click **Select scope**, choose the one with your name, then choose **all-projects**.
+4. Click **Select Date** and choose **1 Year**.
+5. Click **Create**.
+6. Copy the token that appears. If Copy to Clipboard says it failed, highlight the token and press Ctrl+C instead.
+
+Don't paste the token here in the chat — I'll give you a box for it next.
+
+When you've copied it, come back here and type **done**.
 ~~~
 
 **M1r** — the stored token stopped working
 ~~~
 Before we start, I need to reconnect to your Vercel account — the connection has stopped working, probably because the token expired. You'll make a new token, and it takes about five minutes.
-~~~
 
-**M2a** — sign in
-~~~
-I've opened Vercel in the browser panel. Sign in the same way you did when you made your account — with email, Google, GitHub or whichever you used.
-
-When you're signed in, come back here and type **done**.
-~~~
-
-**M2b** — make an account
-~~~
-I've opened Vercel's sign-up page in the browser panel. To make your free account:
-
-1. Choose **Hobby**.
-2. Type your name.
-3. Choose how to sign up — your work email is best.
-4. Follow Vercel's steps until you see your Vercel dashboard.
-
-Vercel accounts are for people aged 16 and over.
-
-When you can see your dashboard, come back here and type **done**.
-~~~
-
-**N** — not signed in yet
-~~~
-It looks like you're not signed in to Vercel yet. Finish signing in in the browser panel, then type **done**.
-~~~
-
-**T** — make the token
-~~~
-I've opened Vercel's **Tokens** page in the browser panel. A token is a private key that lets me publish your apps for you. To make one:
-
-1. Under **Create Token**, click the **New Token** box and type **ClassVR Prototyping Kit**.
-2. Click **Select scope**, choose the one with your name, then choose **all-projects**.
-3. Click **Select Date** and choose **1 Year**.
-4. Click **Create**.
-5. Copy the token that appears. If Copy to Clipboard says it failed, highlight the token and press Ctrl+C instead.
+1. Open **[Vercel's Tokens page](https://vercel.com/account/settings/tokens)**. If you're asked about opening an external link, choose **Open** — the page opens in your own web browser. If Vercel asks you to sign in, sign in with your Vercel account; you'll come straight back to the Tokens page.
+2. In the **Create Token** section, select the **New Token** text box and type a name for the token (for example, "ClassVR Prototyping Token").
+3. Click **Select scope**, choose the one with your name, then choose **all-projects**.
+4. Click **Select Date** and choose **1 Year**.
+5. Click **Create**.
+6. Copy the token that appears. If Copy to Clipboard says it failed, highlight the token and press Ctrl+C instead.
 
 Don't paste the token here in the chat — I'll give you a box for it next.
 
-When you've copied it, type **done**.
+When you've copied it, come back here and type **done**.
+~~~
+
+**U** — they have no Vercel account
+~~~
+You'll need a Vercel account to use the kit. Open **[Vercel's sign-up page](https://vercel.com/signup)** — it opens in your own web browser — and make your free account there, choosing **Hobby**.
+
+When you've made it, come back here and type **done**.
 ~~~
 
 **P** — paste it into the box
 ~~~
-I've put a box in the browser panel. Click in it, press Ctrl+V to paste your token, then press **Save**.
+Thanks. I've put a box in the browser panel here in Claude. Click in it, press Ctrl+V to paste your token, then press **Save**.
 
 When it says **Connected**, type **done**.
 ~~~
@@ -265,16 +255,16 @@ You're connected to Vercel as **{username}**. The token is kept in Claude's brow
 
 **R** — Vercel refused the token
 ~~~
-Vercel didn't accept that token — it probably didn't copy completely. I've switched back to the Vercel tab. Make a new token the same way as before, and copy it.
+Vercel didn't accept that token — it probably didn't copy completely. Go back to **[Vercel's Tokens page](https://vercel.com/account/settings/tokens)**, make a new token the same way as before, and copy it. Then paste it into the box in the browser panel and press **Save**.
 
-When you've copied it, type **done**.
+When it says **Connected**, type **done**.
 ~~~
 
 **S** — wrong scope
 ~~~
-That token can't reach your projects, because its scope isn't set to your own account. I've switched back to the Vercel tab. Make a new token, and under **Select scope** choose the one with your name, then **all-projects**.
+That token can't reach your projects, because its scope isn't set to your own account. Go back to **[Vercel's Tokens page](https://vercel.com/account/settings/tokens)** and make a new token — under **Select scope**, choose the one with your name, then **all-projects**. Copy it, paste it into the box in the browser panel and press **Save**.
 
-When you've copied it, type **done**.
+When it says **Connected**, type **done**.
 ~~~
 
 **W** — not saved yet
@@ -298,7 +288,7 @@ The browser panel is hidden. Press **Ctrl+Shift+B** (**Cmd+Shift+B** on a Mac) t
 
 **X** — the token was pasted into the chat
 ~~~
-Please don't paste the token here — the chat keeps a copy of everything. To be safe, go to the **Tokens** page in the browser panel, remove that token, and make a new one the same way. Copy it, and when you're ready, type **done**.
+Please don't paste the token here — the chat keeps a copy of everything. To be safe, go to **[Vercel's Tokens page](https://vercel.com/account/settings/tokens)**, remove that token, and make a new one the same way. Copy it, and when you're ready, type **done**.
 ~~~
 
 **A** — already connected

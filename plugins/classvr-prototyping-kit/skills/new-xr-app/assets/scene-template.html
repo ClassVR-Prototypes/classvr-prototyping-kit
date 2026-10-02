@@ -41,7 +41,73 @@ window.KIT_CONTROLS = {
      A check passes if it finishes without throwing; return a Promise when it
      needs to wait. Keep each under a couple of seconds. -->
 <script>
+// The gaze reticle's own checks (3DoF apps only) and their helpers come first.
+// Leave them in; add the app's checks after them.
+function rtIs3dof() { var s = document.querySelector('a-scene'), v = s && s.getAttribute('xr-kit'); return (v && typeof v === 'object') ? v.dof === 3 : /dof\s*:\s*3/.test(String(v || '')); }
+function rtGaze() {
+  var THREE = AFRAME.THREE, g = document.querySelector('#gaze').object3D;
+  g.updateMatrixWorld(true);
+  return { o: new THREE.Vector3().setFromMatrixPosition(g.matrixWorld), d: new THREE.Vector3(0, 0, -1).transformDirection(g.matrixWorld) };
+}
+function rtBox(dist, opts) {                                   // a test box placed along the gaze
+  opts = opts || {};
+  var r = rtGaze(), p = r.o.clone().addScaledVector(r.d, dist);
+  var b = document.createElement('a-box');
+  if (opts.clickable !== false) b.classList.add('clickable');
+  b.classList.add('rt-test');
+  b.setAttribute('position', p.x + ' ' + p.y + ' ' + p.z);
+  b.setAttribute('width', opts.w || 0.5); b.setAttribute('height', opts.h || 0.5); b.setAttribute('depth', opts.dep || 0.5);
+  b.setAttribute('rotation', '0 ' + (Math.atan2(-r.d.x, -r.d.z) * 180 / Math.PI + (opts.turn || 0)) + ' 0');
+  document.querySelector('a-scene').appendChild(b);
+  return b;
+}
+function rtState() { return document.querySelector('#reticle').components['gaze-reticle'].state; }
+function rtMesh() { return document.querySelector('#reticle').components['gaze-reticle'].mesh; }
+function rtOn(el, ms) {                                        // wait until the reticle is on `el` (a new box takes a few frames)
+  var until = performance.now() + (ms || 1200);
+  return new Promise(function (res) {
+    (function poll() { if (rtState().hitEl === el || performance.now() > until) return setTimeout(res, 60); setTimeout(poll, 40); })();
+  });
+}
+function rtFace(box, half) {                                   // how far the box's front face is along the gaze right now
+  var r = rtGaze(), p = new AFRAME.THREE.Vector3().setFromMatrixPosition(box.object3D.matrixWorld);
+  return p.sub(r.o).dot(r.d) - half;
+}
+function rtClear() { document.querySelectorAll('.rt-test').forEach(function (b) { b.parentNode.removeChild(b); }); }
+
 window.KIT_CHECKS = [
+  { name: '3DoF: the reticle sits on whatever you look at', when: rtIs3dof, run: function (t) {
+      var box = rtBox(3);
+      return rtOn(box).then(function () {
+        var st = rtState(), r = rtGaze(), face = rtFace(box, 0.25), where = new AFRAME.THREE.Vector3().setFromMatrixPosition(rtMesh().matrixWorld);
+        rtClear();
+        t.expect(Math.abs(st.dist - face) < 0.03, 'the reticle was ' + st.dist.toFixed(2) + ' m away, but the box face is ' + face.toFixed(2) + ' m away');
+        t.expect(Math.abs(where.distanceTo(r.o) - face) < 0.05, 'the reticle was drawn ' + where.distanceTo(r.o).toFixed(2) + ' m away, not on the box');
+        t.expect(st.clickable, 'the reticle did not open into a ring over a selectable box');
+      }); } },
+  { name: '3DoF: the reticle looks the same size near and far, and faces you', when: rtIs3dof, run: function (t) {
+      var THREE = AFRAME.THREE, near, box = rtBox(1.5, { turn: 50, w: 1.2, h: 1.2, dep: 0.05 });
+      return rtOn(box).then(function () {
+        var st = rtState(), r = rtGaze(), n = new THREE.Vector3(0, 0, 1).transformDirection(rtMesh().matrixWorld);
+        near = st.size / st.dist; rtClear();
+        t.expect(n.dot(r.d.clone().negate()) > 0.999, 'the reticle leaned with a tilted board instead of facing you');
+        box = rtBox(8); return rtOn(box);
+      }).then(function () {
+        var st = rtState(), far = st.size / st.dist, face = rtFace(box, 0.25); rtClear();
+        t.expect(Math.abs(st.dist - face) < 0.05, 'the reticle did not move out to a box 8 m away (it was ' + st.dist.toFixed(2) + ' m away)');
+        t.expect(Math.abs(far - near) / near < 0.01, 'the reticle looked a different size far away (' + (far / near).toFixed(3) + '× the near size)');
+      }); } },
+  { name: '3DoF: a wall stops you selecting what is behind it', when: rtIs3dof, run: function (t) {
+      var wall = rtBox(1.5, { clickable: false, w: 1.2, h: 1.2, dep: 0.1 }), target = rtBox(3), clicked = false;
+      target.addEventListener('click', function () { clicked = true; });
+      return rtOn(wall).then(function () { return t.wait(150); }).then(function () {
+        t.press('right', 'trigger'); return t.wait(150);
+      }).then(function () {
+        var st = rtState(); rtClear();
+        t.expect(!clicked, 'the trigger selected a box hidden behind a wall');
+        t.expect(!st.clickable, 'the reticle showed a ring on a wall that cannot be selected');
+      }); } },
+  // Add this app's checks below.
   // { name: 'a ball appears when you press the trigger', run: function (t) {
   //     var before = t.count('.ball');
   //     t.press('right', 'trigger');
@@ -1205,6 +1271,218 @@ AFRAME.registerComponent('xr-kit', {
 
 <div id="kit-panel"><b>{{APP_NAME}}</b><span class="build">build …</span><span>starting…</span></div>
 
+<!-- Sky gradient: the sky's main colour at the horizon, deepening to a very
+     slightly darker shade overhead, like a real sky. Drawn on a small canvas
+     (no image file), like the checked ground. On <a-sky>:
+     sky-gradient="bottom: <main colour>" — the top is worked out
+     automatically (deepen = how much darker, 0.04–0.08 reads as subtle), or
+     set top: <colour> to choose it. Keep the sky's own
+     color the same as bottom, so it still looks right if this ever fails. -->
+<script>
+AFRAME.registerComponent('sky-gradient', {
+  schema: {
+    bottom: { default: '' },          // main colour, at the horizon (default: the sky's color)
+    top:    { default: '' },          // colour overhead (default: bottom, a little darker)
+    deepen: { default: 0.06 }         // how much darker the top is, when top is not set
+  },
+  update: function () {
+    var d = this.data, el = this.el;
+    var base = d.bottom || el.getAttribute('color') || '#bfe3f7';
+    var bottom = new THREE.Color(base);
+    var top = d.top ? new THREE.Color(d.top) : bottom.clone().offsetHSL(0, 0, -d.deepen);
+    var c = document.createElement('canvas'); c.width = 4; c.height = 512;
+    var g = c.getContext('2d');
+    var grad = g.createLinearGradient(0, 0, 0, 512);       // canvas top = straight up
+    grad.addColorStop(0, '#' + top.getHexString());
+    grad.addColorStop(0.5, '#' + bottom.getHexString());   // the horizon
+    grad.addColorStop(1, '#' + bottom.getHexString());
+    g.fillStyle = grad; g.fillRect(0, 0, 4, 512);
+    var tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.magFilter = tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
+    function apply() {
+      var mesh = el.getObject3D('mesh'); if (!mesh || !mesh.material) return;
+      mesh.material.map = tex; mesh.material.color.set('#ffffff'); mesh.material.needsUpdate = true;
+    }
+    apply();
+    if (!this._bound) { this._bound = true; el.addEventListener('object3dset', apply); el.addEventListener('materialtextureloaded', apply); }
+  }
+});
+</script>
+
+<!-- Gaze reticle (3DoF apps). A small dot that sits ON whatever the player is
+     looking at, so both eyes focus on it at the same depth as the object —
+     the cue that makes a reticle feel attached rather than floating in front
+     of your face. It is resized with distance (always the same apparent size),
+     lies on the surface it hits (leaning at most `maxTilt` away from facing
+     you, so it never turns edge-on), opens into a ring over things a trigger
+     can select, and squeezes when the trigger is pressed. Drawn on top of
+     everything, unlit. Placed during rendering, after the headset's pose for
+     the frame is known, so it never lags behind the head.
+     It also lets solid things block the gaze: every visible object that is
+     not .clickable is tagged .gaze-solid and added to the gaze ray, so a
+     target hidden behind a wall can no longer be selected through it. Give an
+     entity class="no-gaze" to let the gaze pass straight through it.
+     Tuned on a ClassVR headset (2 Oct 2026, Gaze Reticle test app): the
+     "facing" style at 0.63° across was preferred. Leave this block and the
+     #reticle entity in the scene; they switch themselves off in 6DoF apps. -->
+<script>
+AFRAME.registerComponent('gaze-reticle', {
+  schema: {
+    mode:      { default: 'facing' },    // facing = right depth, always faces you (chosen on the headset); surface = also lies flat on what you look at; fixed = old style, 1 m ahead
+    dot:       { default: 0.63 },        // idle dot, degrees across (chosen on the headset)
+    ringOuter: { default: 1.8 },         // ring over something selectable, degrees across (kept in proportion with the dot)
+    ringInner: { default: 1.17 },
+    edge:      { default: 0.14 },        // dark outline so it shows on light and dark surfaces, degrees
+    rest:      { default: 10 },          // metres away when nothing is under the gaze (the sky)
+    maxTilt:   { default: 60 },          // how far it may lean away from facing you, degrees
+    fixedAt:   { default: 1 }            // metres, for mode: fixed
+  },
+  init: function () {
+    var self = this, THREE = AFRAME.THREE;
+    this.sceneEl = this.el.sceneEl;
+    this.state = { dist: 0, size: 0, hitEl: null, clickable: false, name: '', placed: 0 };
+    this.active = false;
+    this.cur = { inner: 0, outer: 0, squeeze: 1 };
+    this.pressed = false;
+    this.ray = new THREE.Raycaster(); this.hits = [];
+    this.v = { o: new THREE.Vector3(), d: new THREE.Vector3(), p: new THREE.Vector3(), n: new THREE.Vector3(), c: new THREE.Vector3(),
+               z: new THREE.Vector3(0, 0, 1), q: new THREE.Quaternion(), q2: new THREE.Quaternion(), qi: new THREE.Quaternion(),
+               s: new THREE.Vector3(), m3: new THREE.Matrix3() };
+    this.PLANE_DEG = 2.8;                                      // the plane covers this many degrees; the shader draws inside it
+    var mat = new THREE.ShaderMaterial({
+      uniforms: { uInner: { value: 0 }, uOuter: { value: 0.25 }, uEdge: { value: 0.05 }, uAlpha: { value: 1 } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: [
+        'uniform float uInner; uniform float uOuter; uniform float uEdge; uniform float uAlpha; varying vec2 vUv;',
+        'void main() {',
+        '  float r = length(vUv - 0.5) * 2.0;',                                       // 0 at the centre, 1 at the plane's edge
+        '  float aa = max(fwidth(r), 0.002);',
+        '  float white = smoothstep(uInner - aa, uInner, r) * (1.0 - smoothstep(uOuter, uOuter + aa, r));',
+        '  float dark = smoothstep(uInner - uEdge - aa, uInner - uEdge, r) * (1.0 - smoothstep(uOuter + uEdge, uOuter + uEdge + aa, r));',
+        '  float a = max(white, dark * 0.6) * uAlpha;',
+        '  if (a < 0.01) discard;',
+        '  gl_FragColor = vec4(mix(vec3(0.06, 0.07, 0.09), vec3(1.0), white), a);',
+        '}'
+      ].join('\n'),
+      transparent: true, depthTest: false, depthWrite: false
+    });
+    var mesh = this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+    mesh.name = 'gaze-reticle'; mesh.renderOrder = 9000; mesh.frustumCulled = false;
+    mesh.matrixAutoUpdate = false; mesh.matrixWorldAutoUpdate = false; mesh.visible = false;
+    mesh.onBeforeRender = function () { if (!self.placedInRender) { self.placedInRender = true; self.place(); } };
+    this.sceneEl.object3D.add(mesh);
+
+    function start() {
+      var kit = self.sceneEl.components['xr-kit'];
+      var dof = kit ? kit.data.dof : 6;
+      self.gaze = document.querySelector('#gaze');
+      if (dof !== 3 || !self.gaze) { self.log('off (only 3DoF apps use the gaze reticle)'); return; }
+      self.active = true; mesh.visible = true;
+      var st = document.createElement('style'); st.textContent = '#kit-reticle { display: none !important; }';   // the 3D reticle replaces the flat ring
+      document.head.appendChild(st);
+      self.gaze.addEventListener('mousedown', function () { self.pressed = true; });
+      self.gaze.addEventListener('mouseup', function () { self.pressed = false; });
+      // Solid things block the gaze.
+      self.gaze.setAttribute('raycaster', 'objects', '.clickable, .gaze-solid');
+      self.sceneEl.querySelectorAll('*').forEach(function (el) { self.tagSolid(el); });
+      // New things (and removed ones) are picked up straight away, not just at load.
+      self.sceneEl.addEventListener('object3dset', function (e) { if (e.detail && e.detail.type === 'mesh') { self.tagSolid(e.target); self.refresh(); } });
+      self.sceneEl.addEventListener('child-detached', function () { self.refresh(); });
+      self.refresh();
+      self.log('on — mode', self.data.mode, '; solid objects that block the gaze:', self.sceneEl.querySelectorAll('.gaze-solid').length);
+    }
+    if (this.sceneEl.hasLoaded) start(); else this.sceneEl.addEventListener('loaded', start);
+  },
+  log: function () {
+    var a = ['[gaze-reticle]'].concat([].slice.call(arguments));
+    console.log(a.join(' '));
+  },
+  // A visible thing that isn't selectable becomes something the gaze stops at.
+  tagSolid: function (el) {
+    if (!el || !el.isEntity || el.isScene || !el.getObject3D || !el.getObject3D('mesh')) return;
+    if (el.tagName === 'A-SKY' || el.closest('#rig') || el.closest('.clickable') || el.closest('.no-gaze') || el.hasAttribute('gaze-reticle')) return;
+    if (el.classList.contains('gaze-solid')) return;
+    el.classList.add('gaze-solid');
+    this.refresh();
+  },
+  refresh: function () {
+    var self = this;
+    if (this._rt) return;
+    this._rt = setTimeout(function () {
+      self._rt = null;
+      var rc = self.gaze && self.gaze.components.raycaster;
+      if (rc && rc.refreshObjects) rc.refreshObjects();
+    }, 0);
+  },
+  // Where the gaze lands this frame: cast from the #gaze cursor itself, so the
+  // reticle and a trigger press always agree on what is being looked at.
+  place: function () {
+    if (!this.active) return;
+    var THREE = AFRAME.THREE, v = this.v, d = this.data, st = this.state, mesh = this.mesh;
+    var g = this.gaze.object3D;
+    v.o.setFromMatrixPosition(g.matrixWorld);
+    v.d.set(0, 0, -1).transformDirection(g.matrixWorld);
+    var rc = this.gaze.components.raycaster;
+    var far = (rc && rc.data.far) || 40, hit = null;
+    if (rc && rc.objects && rc.objects.length) {
+      this.ray.set(v.o, v.d); this.ray.near = 0; this.ray.far = far;
+      this.hits.length = 0;
+      this.ray.intersectObjects(rc.objects, true, this.hits);
+      for (var i = 0; i < this.hits.length; i++) { if (this.shown(this.hits[i].object)) { hit = this.hits[i]; break; } }
+    }
+    var el = null;
+    if (hit) { var o = hit.object; while (o && !o.el) o = o.parent; el = o && o.el; }
+    st.hitEl = el;
+    st.clickable = !!(el && el.closest && el.closest('.clickable'));
+    st.name = el ? (el.getAttribute('data-name') || (el.closest('[data-name]') && el.closest('[data-name]').getAttribute('data-name')) || el.id || el.tagName.toLowerCase()) : '';
+    st.hitDist = hit ? hit.distance : 0;
+    var dist = d.mode === 'fixed' ? d.fixedAt : (hit ? hit.distance : d.rest);
+    st.dist = dist;
+    // Which way it faces: towards the viewer, leaning onto the surface it sits on.
+    v.c.copy(v.d).negate();                                     // towards the viewer
+    v.n.copy(v.c);
+    if (d.mode === 'surface' && hit && hit.face) {
+      v.m3.getNormalMatrix(hit.object.matrixWorld);
+      v.n.copy(hit.face.normal).applyMatrix3(v.m3).normalize();
+      if (v.n.dot(v.c) < 0) v.n.negate();                      // the side facing the viewer
+      var ang = Math.acos(Math.min(1, Math.max(-1, v.n.dot(v.c)))), max = d.maxTilt * Math.PI / 180;
+      if (ang > max) {                                          // never edge-on: lean back towards the viewer
+        v.q.setFromUnitVectors(v.c, v.n);
+        v.q2.copy(v.qi.identity()).slerp(v.q, max / ang);
+        v.n.copy(v.c).applyQuaternion(v.q2);
+      }
+    }
+    v.q.setFromUnitVectors(v.z, v.n);
+    v.p.copy(v.o).addScaledVector(v.d, dist);
+    var size = 2 * dist * Math.tan(this.PLANE_DEG * Math.PI / 360);   // same apparent size at any distance
+    st.size = size;
+    v.s.set(size, size, size);
+    mesh.matrixWorld.compose(v.p, v.q, v.s);
+    mesh.matrix.copy(mesh.matrixWorld);
+    st.placed++;
+  },
+  shown: function (o) {                                        // visible, and still in the scene
+    var root = this.sceneEl.object3D;
+    while (o) { if (!o.visible) return false; if (o === root) return true; o = o.parent; }
+    return false;
+  },
+  tick: function (t, dt) {
+    if (!this.active) return;
+    this.placedInRender = false;
+    this.place();                                               // so the state is right even before the first draw
+    var d = this.data, c = this.cur, u = this.mesh.material.uniforms, P = this.PLANE_DEG;
+    var ring = this.state.clickable;
+    var ti = ring ? d.ringInner / P : 0, to = (ring ? d.ringOuter : d.dot) / P;
+    var ts = this.pressed ? 0.7 : 1;
+    var k = 1 - Math.exp(-(dt || 16) / 60);                     // eased over about a tenth of a second
+    c.inner += (ti - c.inner) * k; c.outer += (to - c.outer) * k; c.squeeze += (ts - c.squeeze) * Math.min(1, k * 2);
+    u.uInner.value = c.inner * c.squeeze; u.uOuter.value = c.outer * c.squeeze; u.uEdge.value = d.edge / P;
+  },
+  remove: function () { if (this.mesh && this.mesh.parent) this.mesh.parent.remove(this.mesh); }
+});
+</script>
+
 <!-- ======================================================================
      YOUR SCENE. Add objects below the rig. Coordinates are metres:
      x right, y up, z toward you — so negative z is in front of the player.
@@ -1221,9 +1499,11 @@ AFRAME.registerComponent('xr-kit', {
   vr-mode-ui="enabled: true"
   device-orientation-permission-ui="enabled: true">
 
-  <!-- ground and sky -->
+  <!-- ground and sky: the standard look. An app with a concept gets a look of
+       its own (sky, background, floor colours, groundColor below, page
+       background) — see xr-app-rules, "The look". Keep both; recolour them. -->
   <a-plane position="0 0 0" rotation="-90 0 0" width="40" height="40" color="#a4d29a" checker-ground></a-plane>
-  <a-sky color="#bfe3f7"></a-sky>
+  <a-sky color="#bfe3f7" sky-gradient="bottom: #bfe3f7"></a-sky>
 
   <!-- light. three.js uses physical light units now — these values are
        roughly double what older tutorials suggest, and that is correct. -->
@@ -1256,6 +1536,10 @@ AFRAME.registerComponent('xr-kit', {
       <a-entity id="right-hand" laser-controls="hand: right; model: false" raycaster="objects: .clickable; direction: 0 -0.82 -0.57"></a-entity>
     </a-entity>
   </a-entity>
+
+  <!-- Gaze reticle: the dot that shows a 3DoF player what they are looking at
+       (it switches itself off in 6DoF apps). Leave it in. -->
+  <a-entity id="reticle" gaze-reticle></a-entity>
 
   <!-- ADD YOUR CONTENT HERE -->
 

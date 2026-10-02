@@ -11,7 +11,7 @@ description: >
   an app working on a ClassVR headset, so ordinary prompts don't reintroduce known
   failures, plus ready recipes such as passthrough (AR) and the microphone.
 metadata:
-  version: "0.13.0"
+  version: "0.14.2"
 ---
 
 # Rules for editing a kit XR app
@@ -24,8 +24,26 @@ silently — the user asked for a table, not a lecture on colour spaces.
 
 **Check the Vercel connection first.** Every edit ends in a publish, so
 before the first edit in a session run `/connect-vercel`'s **The check** —
-before touching the app. Connected → carry on silently. Not connected → its
-setup script runs now, word for word, then the edit.
+before touching the app. Connected → say nothing about Vercel. Not connected →
+its setup script runs now, word for word, then the edit.
+
+**Keep the person posted while you work — progress updates.** An edit ends
+in a publish and takes a few minutes, so send **3–5** short progress updates
+(3 for a small tweak, 5 for a new feature), each a `SendUserMessage` call made
+alongside that step's first real tool call (never on its own), following `${CLAUDE_PLUGIN_ROOT}/skills/new-xr-app/references/progress-updates.md` (read it at the start of the first edit
+in a session; load `SendUserMessage` with ToolSearch if it is deferred). The
+updates: **starting**, naming what is being changed (after the check, before
+touching the app) → **the change** (one more for a bigger feature) → **test
+run** in a browser (the preview check) → **uploading version N to Vercel**
+(the publish). Each update says plainly what is happening and what stage the edit is at.
+
+**Read only what you edit.** In `index.html`, the long middle (from the
+`<!-- The diary.` comment to the `xr-kit` component's end) is the kit's own
+blocks and are never edited: Read the top (to `KIT_CHECKS`) and from
+`</head>` to the end, or Grep for the thing you are changing and Read around
+it — never the whole file. Make each change in as few edits as possible. The closing
+reply is not an update; plain words for anything the person
+must know or do.
 
 **Bring the kit's own parts up to date first.** Before the first edit to an
 app in a session (and on any folder that came from a copy), run
@@ -60,10 +78,11 @@ floor at the origin; the headset supplies eye height. Comfortable interaction
 range is 0.4–0.8 m from the rig; readable detail sits 1.5–3 m away. Tables are
 about 0.6–0.9 m high.
 
-**Keep the pastel lighting setup.** `toneMapping: no` plus hemisphere `2.25` and
+**Keep the lighting setup.** `toneMapping: no` plus hemisphere `2.25` and
 directional `1.5`. These are physical light units (three.js r155+); halving them
 to match old tutorials makes everything dark, and turning tone mapping on turns
-pastels to mud.
+pastels to mud. This holds for every look, dark ones included — tint the
+lights to suit (see "The look"), don't dim them.
 
 ## The headset
 
@@ -111,14 +130,81 @@ ball'`. Remove lines for interactions that are taken out.
 build. Draw text onto a 2D `<canvas>` and use it as a `THREE.CanvasTexture` on a
 `THREE.PlaneGeometry`. Real text in 3D, no font file, no network.
 
-## The ground
+## The look — theme it to the app
 
-The starter floor is `<a-plane … checker-ground>`: a 1 m two-green check drawn
-on a canvas and tiled, there so looking and walking are visible. Keep the
-component when recolouring or resizing the floor (it reads `width`/`height`;
-`colorA`/`colorB`/`cell` are its knobs). Replacing the floor with something
-else is fine — just don't go back to a single flat colour, which reads as
-"nothing is moving" on desktop.
+The starter's look — checked green ground, pale blue sky — is the **default,
+not the house style**. A new app gets a look that suits the idea: the person
+picks it from two or three looks offered alongside the concept question
+(`new-xr-app` step 2c), or describes their own, and it goes in with the first
+build edit. A sound garden glows under a dark night sky;
+a space walk sits on dark panels under black; a desert dig is sand under a hot
+pale sky; a maths shop is warm wood and cream. The standard look is always one of the options and is
+used when nothing was asked (the plain starter scene) — it should be a
+choice, not a habit. Later, "make it spooky" or "go back to the green floor"
+is just an edit: do what they say, no question.
+
+A look is five colours, all in the app's own part of `index.html` (below
+`</head>`), so `--refresh-kit` never undoes them:
+
+| What | Where | Note |
+|---|---|---|
+| Sky | `<a-sky color="…" sky-gradient="bottom: …">` — the same main colour in both | sets the mood; dark is fine. Deepens to a very slightly darker shade overhead (below) |
+| Scene background | `<a-scene background="color: …">` | same as the sky |
+| Floor | `checker-ground="colorA: …; colorB: …"` on the floor `<a-plane>`, and its `color` = colorA | two close shades |
+| Ground bounce | hemisphere light `groundColor` | a light tint of the floor colour — it's what the floor reflects up onto objects |
+| Page while loading | `<style>html, body { background: …; }</style>` on the line just before the real `<a-scene xr-kit="dof: …"` tag near the end (an earlier `<a-scene` is only a mention in a kit comment) | the sky colour, so a dark app doesn't flash pale blue while it loads |
+
+Plus two or three accent colours for the app's own things, picked to stand
+out against that sky and floor. Record the look in one line with
+`manifest.py --set look="…"` (e.g. `night garden: sky #0e1226, floor
+#232a3d/#1b2132, accents teal, magenta, gold`) so later sessions keep to it.
+
+**The sky is always a subtle gradient**, whatever the look: the main sky
+colour at the horizon (the lighter end), deepening to a very slightly darker
+shade straight up, the way a real sky does. The template's `sky-gradient`
+component does it (a small canvas, like the checked ground), and works the
+top out by itself (`deepen: 0.06` — darker by 6 % lightness), so normally you
+set only `bottom` — pick the main sky colour as the horizon colour. Choose it yourself only
+when the look calls for a slightly different tint overhead — `top: <colour>`
+(a sunset sky shifting slightly in hue towards the top), or `deepen:
+0.04`–`0.08` for less or more. On a near-black sky use `deepen: 0.03` or
+less, so the top doesn't go fully black. Keep it subtle: the two ends should look like one colour at a
+glance. Never ask the person about it — it isn't one of the Look options,
+just part of every look. Keep the component (and the sky's `color` = `bottom`,
+so it still looks right if the gradient ever fails). Apps made before kit
+0.48 have no `sky-gradient` script: to give one a gradient, copy the
+template's `sky-gradient` `<script>` (just above the "YOUR SCENE" banner)
+into the app at the same place.
+
+What keeps any look working on the headset:
+
+- **Keep a patterned floor.** Keep `checker-ground` (recolour it, change
+  `cell`) or another visibly textured floor — never one flat colour, which
+  reads as "nothing is moving" when the player walks. The two shades need a
+  visible step between them, roughly 10–15 % apart in lightness (dark:
+  `#232a3d` / `#1b2132`; sand: `#e8d5a8` / `#d9c28c`). Too close and movement
+  disappears again; too far and the floor is busy.
+- **Keep an `a-sky` and the floor `a-plane`.** The built-in self-check looks
+  for both and passthrough hides them by name. Recolour or resize them, never
+  delete them (a space app still stands on something: dark panels, a deck).
+- **Dark looks: darken the colours, not the lights.** Leave the light
+  intensities as they are (see "Keep the lighting setup"); dimming them turns
+  everything muddy in the headset. The darkness comes from the sky,
+  background and floor. Things meant to glow get `material="shader: flat"`
+  or an `emissive` colour, so they stay bright whatever the light.
+- **Contrast for what matters.** The things the player must find, the goal
+  display and any text in the scene stand out clearly against what is behind
+  them — light on dark or dark on light, never mid on mid. Text panels keep
+  their own solid background.
+- **Few colours.** One mood (sky + floor) and two or three accents. Flat,
+  slightly soft colours read best in the headset; bright on near-black is
+  right for a night, space or sound theme.
+- Never "fix" washed-out or too-dark colours seen on the headset by changing
+  the palette — see "Colour on the headset".
+
+Changing the look later is the same five places plus the accents, and the
+`look` line in the manifest — the sky's `color` and `sky-gradient` bottom
+change together.
 
 ## Anything the player must see while immersed
 
@@ -240,6 +326,32 @@ sends. The right stick snap-turns as usual. So:
 - **Hover is free.** The gaze cursor emits `mouseenter` / `mouseleave` on
   `.clickable` entities as the player looks at them — use it to highlight the
   current target so they know what a squeeze will pick.
+- **The gaze reticle is built in** (apps made with kit 0.49 or later): the
+  `gaze-reticle` component (a `<script>` just above the "YOUR SCENE" banner)
+  and `<a-entity id="reticle" gaze-reticle>` below the rig. It is the dot the
+  player sees in the middle of their view: it sits **on** whatever they look at
+  (so both eyes focus on it at that depth), is resized with distance so it
+  always looks the same size, always faces them, opens into a ring over
+  `.clickable` things and squeezes on a trigger press. Drawn on top, unlit,
+  placed after the head pose is known each frame. It replaces the flat
+  `#kit-reticle` ring in 3DoF apps (desktop too) and switches itself off in
+  6DoF apps. Chosen on a ClassVR headset (2 Oct 2026, `34 - Gaze Reticle`):
+  style `facing`, dot 0.63° across. **Leave both in place and keep the
+  defaults** unless the person asks; other settings are `mode: surface` (lies
+  flat on slanted surfaces, at most `maxTilt` 60° from facing you) or `fixed`
+  (the old 1 m dot), `dot` / `ringOuter` / `ringInner` (degrees across),
+  `rest` (metres away when looking at the sky). Its three self-checks come
+  first in `KIT_CHECKS` (with the `rt…` helpers) — keep them.
+- **Solid things block the gaze** (with the reticle): every visible entity
+  that is not `.clickable` is tagged `.gaze-solid` and added to the gaze ray,
+  so a target behind a wall or sign can't be selected through it. Give an
+  entity `class="no-gaze"` (e.g. a glass pane, a big transparent effect) to let
+  the gaze pass through. A `click` can now land on a solid thing — harmless,
+  but never listen for `click` on the scene itself.
+- **Older 3DoF apps** (no `gaze-reticle` script) keep the old behaviour. To
+  give one the reticle when asked, copy the template's `gaze-reticle`
+  `<script>`, the `#reticle` entity and the three reticle checks with their
+  helpers into the app at the same places.
 - **Moving the rig is allowed** (the lock is relative to the rig) but keep it to
   short hops or slow constant glides; the player has no body cues at all.
 - **Controls list:** the headset list says `Look at … and squeeze a trigger` —

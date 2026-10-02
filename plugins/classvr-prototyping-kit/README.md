@@ -7,7 +7,7 @@ Things you can say:
 
 | You say | What happens |
 |---|---|
-| **"Make a new VR app called Planet Walk"** (`/new-xr-app`) | A folder appears with a working scene — checked green ground, blue sky, a VR rig with controllers, thumbstick movement and snap-turn — and the app is published straight to its own permanent Vercel link (the first time, you connect your Vercel account). Right-click and drag to look around, left-click presses; WASD moves, Q/E turn. If the name sounds like a game ("Bubble Pop") and you didn't say what it does, you're offered a few concepts — or the empty scene — and the one you pick is built as a first playable version. |
+| **"Make a new VR app called Planet Walk"** (`/new-xr-app`) | A folder appears with a working scene — checked green ground, blue sky, a VR rig with controllers, thumbstick movement and snap-turn — and the app is published straight to its own permanent Vercel link (the first time, you connect your Vercel account). Right-click and drag to look around, left-click presses; WASD moves, Q/E turn. If the name sounds like a game ("Bubble Pop") and you didn't say what it does, you're offered a few concepts — or the empty scene — and the one you pick is built as a first playable version, in the look (sky, floor, colours) you pick alongside it. |
 | **"Put it on the headset"** / **"Share it"** / **"Refresh the link"** (`/publish-to-vercel`) | How every app is published, and it runs by itself after every edit so the link is never behind — connect your Vercel account once (**"connect my Vercel account"**, `/connect-vercel`: you make a token in Vercel and paste it into a box in Claude's browser; nothing to install): the app is rebuilt as a small page that loads the kit's plumbing from a shared, versioned library, deployed to `https://<app>.vercel.app` from Claude's built-in browser with your token — no upload screen — verified live, and you get the link — the page shows its own QR code in the corner for a headset to scan. Enter VR works on a headset; updates are live in seconds; the page is kept out of search engines; and the app sends its diary to the same project, so "what went wrong?" is answered in seconds whether it was played on a headset, a desktop or a shared link — for weeks afterwards, not just the past hour. Say it when you create the app ("…hosted on Vercel") or any time after. **Every publish is a saved version**: `<app>.vercel.app/history` lists them all with a one-line note each, every one stays playable at `/v/<N>/`, "show me the versions" reads the list, and "go back to version 4" puts it back as a new version — nothing is ever lost. Each version is also kept in the app's own folder (`versions/Versions 1 - 10/04-index.html`, with a short README beside it), so going back needs no download and the history travels with the folder. |
 | **"Make me my own copy of this"** (`/copy-xr-app`) | Give it the address of any published kit app — yours or a colleague's, the current version or "version 4" from its history — and you get the whole thing as an editable project in your own folder, fingerprint-checked and ready to change. Nothing is needed from whoever made it: no files sent, no shared account. Your copy is yours; the original is untouched. |
 | **"Show me"** (`/preview-xr-app`) | The app is loaded in a headless browser and checked for errors. You get a screenshot and a one-line health report. |
@@ -244,6 +244,83 @@ apostrophe ("Tom's Game") no longer breaks the status panel.
 0.37.1: the relay only switches on for a page served from its published
 address. A kept version opened as a file from the app's folder now asks for
 the error code, as a local file should.
+
+### Progress updates while Claude builds (0.44, plain since 0.49)
+
+A new app takes several minutes, and the chat used to go silent from the end
+of the Vercel setup to the final link. Now short progress updates arrive as
+the work happens: 8–10 for a new app with a concept built (about one a
+minute), 5–6 for a plain starter scene, 3–5 for an edit, 4–6 for a copy, 2–3
+for a publish on its own. Each is sent with `SendUserMessage`, because Cowork
+shortens text written between steps, and alongside the step's own work, so it
+adds no time. Updates name the real thing and stage ("Building's done.
+Running it in a browser to test it", "Uploading Bubble Pop to Vercel"), so the
+person always knows whether the app is being built, tested or uploaded. The
+guide is `skills/new-xr-app/references/progress-updates.md`.
+
+0.49: updates are plain and factual — no characters, story or emoji — to suit
+professional staff using the kit as an internal tool.
+
+### Every app gets a look that suits it (0.46–0.47)
+
+The checked green ground and blue sky are the starter's default, not the
+house style: apps kept inheriting them whatever the idea. Now, once a concept
+question is asked, a **Look** question goes in the same dialog: two or three
+looks that suit the name (a sound garden glowing under a night sky, a desert
+dig of sand under a pale hot sky), described in plain colour words, then
+"Standard green and blue" — or the person types their own. Claude turns the
+pick into the sky, floor and two or three accent colours. When the request
+already described the game, the Look question is still asked (with the
+Headset one if needed); the plain starter scene asks nothing and uses the
+standard look. (0.47: 0.46 picked the look itself without asking, and its
+new-xr-app description went over the 1,024-character limit, so it wouldn't
+install.) The rules (`xr-app-rules`, "The look") keep any look working
+in the headset: the floor stays patterned so movement is visible, the sky and
+floor are recoloured rather than removed, dark looks come from darker
+colours not dimmer lights, and what matters stands out against what's behind
+it. The look lives in the app's own part of the page, so refreshing the kit
+never undoes it, and is recorded in the manifest's `look` line.
+
+### The sky is a subtle gradient (0.48)
+
+Every sky now deepens from its main colour at the horizon to a very slightly
+darker shade overhead, like a real sky, whatever the look — it makes even the plain starter
+scene look less flat. A small `sky-gradient` component in the app's own part
+of the page draws it on a canvas (like the checked ground) and works the top
+colour out by itself (0.48.1 flipped it: 0.48.0 went lighter overhead), so the person is never asked for a second colour; Claude
+sets the top only when a look calls for a slightly different tint. It is not
+part of the shared library, so the library (`44b2b86b5f4f`) is unchanged and
+nothing new has to be hosted. Older apps keep a solid sky unless the script is
+copied in.
+
+### A gaze reticle for 3DoF apps (0.50)
+
+3DoF apps select by looking and squeezing a trigger, but in the headset there
+was nothing to show where the gaze was. New apps now have a reticle: a small
+dot that sits **on** whatever the player looks at, so both eyes focus on it at
+the same depth as the object (a dot fixed in front of the face looked like it
+was floating). It is resized with distance so it always looks the same size,
+always faces the player, opens into a ring over things that can be selected,
+and squeezes on a trigger press. Solid things now block the gaze, so a target
+behind a wall can't be selected through it. Tuned on a ClassVR headset with
+the Gaze Reticle test app (folder 34): of three styles, Luke chose "right
+depth, faces you", at 0.9× the first size (0.63° across). It lives in the
+app's own part of the page (like the sky gradient), so the shared library is
+unchanged and existing apps are untouched; it switches itself off in 6DoF
+apps, and turns on if an app is switched to 3DoF.
+
+Also in 0.50: the start-of-job Vercel check now also checks the token can
+reach projects (one passed the old check and was then refused when
+publishing); the after-publish check copes with a hidden browser panel; and
+switching an app between 3DoF and 6DoF no longer edits a comment in the kit's
+own code instead of the real setting (it had stopped working).
+
+0.50.1: after a publish the built-in browser is left on the app's plain link.
+It used to stay on the test address (`?kitcheck`), where the self-checks run
+by themselves 2.5 s after load — so anyone looking at or reloading that tab
+saw the player slide forward (the "can walk" check) and the app play itself.
+The after-publish check also takes `?kitcheck` off the address once it has
+run. Found with Learn to Cook, 2 Oct 2026.
 
 ## Known limitations
 
